@@ -26,7 +26,7 @@ imuPreintegration::imuPreintegration()
     qwb = Eigen::Quaterniond(Eigen::Vector4d(0,0,0,1));
     gw = Eigen::Vector3d(0,0,-9.81);
     //gtsam
-    boost::shared_ptr<gtsam::PreintegrationParams> p = gtsam::PreintegrationParams::MakeSharedU(10);
+    boost::shared_ptr<gtsam::PreintegrationParams> p = gtsam::PreintegrationParams::MakeSharedU(9.81);
     p->accelerometerCovariance = gtsam::Matrix33::Identity(3, 3) * pow(0.01, 2); // acc white noise in continuous
     p->gyroscopeCovariance = gtsam::Matrix33::Identity(3, 3) * pow(0.001, 2); // gyro white noise in continuous
     p->integrationCovariance =
@@ -37,12 +37,25 @@ imuPreintegration::imuPreintegration()
                                                                 prior_imu_bias);
     prevBias_ = gtsam::imuBias::ConstantBias();
     imuIntegratorImu_->resetIntegrationAndSetBias(prevBias_);
+    //imu旋转
+    std::vector<double> extRotV {-1, 0, 0,
+                                                                0, 1, 0,
+                                                                0, 0, -1};
+    std::vector<double> extRPYV {0, 1, 0,
+                                                                -1, 0, 0,
+                                                                0, 0, 1};
+    std::vector<double> extTransV{0,0,0};
+    extRot = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRotV.data(), 3, 3);
+    extRPY = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRPYV.data(), 3, 3);
+    extTrans = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extTransV.data(), 3, 1);
+    extQRPY = Eigen::Quaterniond(extRPY).inverse();
+    imuType = 1;
 }
 
 void imuPreintegration::dloHandler(const nav_msgs::Odometry::ConstPtr &msg) {
     //降频
     static int cnt = 0;
-    if(cnt<10) {
+    if(cnt<0) {
         cnt++;
         return;
     }
@@ -52,10 +65,10 @@ void imuPreintegration::dloHandler(const nav_msgs::Odometry::ConstPtr &msg) {
     Pwb << point.x, point.y, point.z;
     Pwb << point.x, point.y, point.z;
     geometry_msgs::Quaternion ori = msg->pose.pose.orientation;
-    qwb =  Eigen::Quaterniond(Eigen::Vector4d(ori.x, ori.y, ori.z, ori.w));;
+    qwb =  Eigen::Quaterniond(Eigen::Vector4d(ori.x, ori.y, ori.z, ori.w));
     geometry_msgs::Vector3 v = msg->twist.twist.linear;
     Eigen::Vector3d tmpv(v.x, v.y, v.z);
-    // Vw = (tmpv+Vw)/2;
+    Vw = tmpv;
     lastImuTime = msg->header.stamp.toSec();;
     getLidar = 1;
     //gtsam
@@ -65,9 +78,55 @@ void imuPreintegration::dloHandler(const nav_msgs::Odometry::ConstPtr &msg) {
     imuIntegratorImu_->resetIntegrationAndSetBias(prevBias_);
 }
 
-void imuPreintegration::imuHandler(const sensor_msgs::Imu::ConstPtr &imuData)
+/**
+ * 旋转IMU，平移IMU
+*/
+sensor_msgs::Imu imuPreintegration::imuConverter(const sensor_msgs::Imu &imu_in) {
+        sensor_msgs::Imu imu_out = imu_in;
+        // rotate acceleration
+        Eigen::Vector3d acc(imu_in.linear_acceleration.x, imu_in.linear_acceleration.y, imu_in.linear_acceleration.z);
+        acc = extRot * acc;
+        imu_out.linear_acceleration.x = acc.x();
+        imu_out.linear_acceleration.y = acc.y();
+        imu_out.linear_acceleration.z = acc.z();
+        // rotate gyroscope
+        Eigen::Vector3d gyr(imu_in.angular_velocity.x, imu_in.angular_velocity.y, imu_in.angular_velocity.z);
+        gyr = extRot * gyr;
+        imu_out.angular_velocity.x = gyr.x();
+        imu_out.angular_velocity.y = gyr.y();
+        imu_out.angular_velocity.z = gyr.z();
+        // rotate roll pitch yaw
+        Eigen::Quaterniond q_from(imu_in.orientation.w, imu_in.orientation.x, imu_in.orientation.y,
+                                  imu_in.orientation.z);
+        Eigen::Quaterniond q_final;
+        if (imuType == 0) {
+            q_final = extQRPY;
+        } else if (imuType == 1)
+            q_final = q_from * extQRPY;
+        else
+            std::cout << "pls set your imu_type, 0 for 6axis and 1 for 9axis" << std::endl;
+
+        q_final.normalize();
+        imu_out.orientation.x = q_final.x();
+        imu_out.orientation.y = q_final.y();
+        imu_out.orientation.z = q_final.z();
+        imu_out.orientation.w = q_final.w();
+
+        if (sqrt(
+                q_final.x() * q_final.x() + q_final.y() * q_final.y() + q_final.z() * q_final.z() +
+                q_final.w() * q_final.w())
+            < 0.1) {
+            ROS_ERROR("Invalid quaternion, please use a 9-axis IMU!");
+            ros::shutdown();
+        }
+
+        return imu_out;
+    }
+
+void imuPreintegration::imuHandler(const sensor_msgs::Imu::ConstPtr &msg)
 {
-    double imuTime = imuData->header.stamp.toSec();;
+    sensor_msgs::Imu imuData = imuConverter(*msg);
+    double imuTime = imuData.header.stamp.toSec();
     //判断是否第一帧IMU，是否有初始的lidar位置信息
     if(lastImuTime == -1 || getLidar == 0) {
         lastImuTime = imuTime;
@@ -75,7 +134,6 @@ void imuPreintegration::imuHandler(const sensor_msgs::Imu::ConstPtr &imuData)
     }
     double dt = imuTime - lastImuTime;
     lastImuTime = imuTime;
-    lastImuData = *imuData;
     Eigen::Vector3d gyro ( lastImuData.angular_velocity.x,
                                                         lastImuData.angular_velocity.y, 
                                                         lastImuData.angular_velocity.z);
@@ -105,8 +163,9 @@ void imuPreintegration::imuHandler(const sensor_msgs::Imu::ConstPtr &imuData)
                                                            lastImuData.angular_velocity.z), dt);
     // predict odometry
     currentState = imuIntegratorImu_->predict(prevStateOdom, prevBias_);
-    rosPublish(imuData->header);
-    
+    rosPublish(imuData.header);
+    std::cout<<acc<<std::endl<<"dt:"<<dt<<std::endl;
+    lastImuData = imuData;
 }
 
 void imuPreintegration::rosPublish(std_msgs::Header header) {

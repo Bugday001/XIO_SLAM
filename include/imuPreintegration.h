@@ -24,11 +24,10 @@
 #include <gtsam/nonlinear/Values.h>
 #include <gtsam/inference/Symbol.h>
 
-
-
 #include<Eigen/Dense>
 #include<Eigen/Core>
 
+#include<vector>
 class imuPreintegration
 {
 private:
@@ -48,8 +47,16 @@ private:
     gtsam::imuBias::ConstantBias prevBias_;
     gtsam::PreintegratedImuMeasurements *imuIntegratorImu_;
     gtsam::NavState currentState, prevStateOdom;
+    //imu rotation
+    Eigen::Matrix3d extRot;
+    Eigen::Matrix3d extRPY;
+    Eigen::Vector3d extTrans;
+    Eigen::Quaterniond extQRPY;
+    int imuType = 0;
 public:
     imuPreintegration();
+
+    sensor_msgs::Imu imuConverter(const sensor_msgs::Imu &imu_in);
 
     void dloHandler(const nav_msgs::Odometry::ConstPtr &msg);
 

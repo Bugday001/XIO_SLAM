@@ -1,6 +1,8 @@
 <launch>
-    <arg name="use_sim_time" value="true"/>
-    <node name="imuPre" pkg="XIO" type="imuPreintegration_node" output="screen"/>
-    <node pkg="rosbag" type="play" name="playbag1" output="screen" args="--clock $(find XIO)/bags/1.bag"/>
+    <node name="imuPre" pkg="XIO" type="imuPreintegration_node" output="screen">
+      <remap from="/mavros/local_position/odom" to="/lio_sam/mapping/odometry"/>
+      <remap from="/mavros/imu/data" to="/imu_raw"/>
+    </node>
+<!-- lio_sam_6axis/mapping/odometry_incremental -->
   <node name="rvizvisualisation" pkg="rviz" type="rviz" output="screen" args="-d $(find XIO)/cfg/xio.rviz" />
 </launch>
