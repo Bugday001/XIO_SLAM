@@ -31,11 +31,17 @@
 class imuPreintegration
 {
 private:
+    std::mutex mtx;
+    double lastImuQT = -1;
     ros::NodeHandle m_nh;
     ros::Publisher odom_pub_, low_freq_odom_pub_, path_pub_, gtsam_odom_pub_;
     ros::Subscriber imu_sub_, dlo_odom_sub_;
     double lastImuTime = -1;
     sensor_msgs::Imu lastImuData;
+    std::deque<sensor_msgs::Imu> imuQueImu;
+    std::deque<Eigen::Vector3d> imuVw;
+    std::deque<double> imuVwTime;
+    const double delta_t = 0;
     //
     Eigen::Vector3d Pwb;              // position :    from  imu measurements
     Eigen::Quaterniond qwb = Eigen::Quaterniond(Eigen::Vector4d(0,0,0,1));            // quaterniond:  from imu measurements
