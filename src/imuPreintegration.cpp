@@ -12,7 +12,7 @@ imuPreintegration::imuPreintegration()
     : m_nh("~")
 {
     imu_sub_ = m_nh.subscribe<sensor_msgs::Imu>("/mavros/imu/data",
-                                                1,
+                                                200,
                                                 &imuPreintegration::imuHandler,
                                                 this,
                                                 ros::TransportHints().tcpNoDelay());
@@ -67,7 +67,7 @@ void imuPreintegration::dloHandler(const nav_msgs::Odometry::ConstPtr &msg)
     }
     cnt = 0;
     low_freq_odom_pub_.publish(*msg);
-    double currentCorrectionTime = msg->header.stamp.toSec();
+    currentCorrectionTime = msg->header.stamp.toSec();
     geometry_msgs::Point point = msg->pose.pose.position;
     Pwb << point.x, point.y, point.z;
     geometry_msgs::Quaternion ori = msg->pose.pose.orientation;
@@ -188,6 +188,7 @@ sensor_msgs::Imu imuPreintegration::imuConverter(const sensor_msgs::Imu &imu_in)
 
 void imuPreintegration::imuHandler(const sensor_msgs::Imu::ConstPtr &msg)
 {
+    double headTime = ros::Time::now().toSec();
     std::lock_guard<std::mutex> lock(mtx);
     sensor_msgs::Imu imuData = imuConverter(*msg);
     imuQueImu.push_back(imuData);
@@ -226,6 +227,7 @@ void imuPreintegration::imuHandler(const sensor_msgs::Imu::ConstPtr &msg)
     Vw = Vw + acc_w * dt;
     imuVw.push_back(Vw);
     imuVwTime.push_back(imuTime);
+    double eigenTime = ros::Time::now().toSec();
     // gtsam预积分
 #if use_gtsam
     imuIntegratorImu_->integrateMeasurement(gtsam::Vector3(lastImuData.linear_acceleration.x,
@@ -238,7 +240,10 @@ void imuPreintegration::imuHandler(const sensor_msgs::Imu::ConstPtr &msg)
     // predict odometry
     currentState = imuIntegratorImu_->predict(prevStateOdom, prevBias_);
 #endif
+    
     rosPublish(imuData.header);
+    double endTime = ros::Time::now().toSec();
+    // std::cout<<"use_time:"<<eigenTime-headTime<<", "<<endTime-headTime<<std::endl;
     // std::cout << acc << std::endl
     //           << "dt:" << dt << std::endl;
     lastImuData = imuData;
@@ -267,17 +272,24 @@ void imuPreintegration::rosPublish(std_msgs::Header header)
     odom.pose.pose.position = point;
     odom.pose.pose.orientation = ori;
     odom_pub_.publish(odom);
-    // path
-    imuPath.header = header;
-    imuPath.header.frame_id = "map";
-
-    geometry_msgs::PoseStamped position_3d;
-    position_3d.pose.position = point;
-    position_3d.pose.orientation = ori;
-    position_3d.header = header;
-    position_3d.header.frame_id = "map";
-    imuPath.poses.push_back(position_3d);
-    path_pub_.publish(imuPath);
+    //path
+    static double lastPathtime = -1;
+    if(header.stamp.toSec() - lastPathtime>0.1) {
+        //删除最新的雷达时间前1秒外的path点
+        while(!imuPath.poses.empty() && imuPath.poses.front().header.stamp.toSec() < currentCorrectionTime - 1.0)
+                imuPath.poses.erase(imuPath.poses.begin());
+        imuPath.header = header;
+        imuPath.header.frame_id = "map";
+        geometry_msgs::PoseStamped position_3d;
+        position_3d.pose.position = point;
+        position_3d.pose.orientation = ori;
+        position_3d.header = header;
+        position_3d.header.frame_id = "map";
+        imuPath.poses.push_back(position_3d);
+        path_pub_.publish(imuPath);
+        lastPathtime = header.stamp.toSec();
+    }
+    
     // gtsam pose
 #if use_gtsam
     gtsam::Pose3 lidarPose = gtsam::Pose3(currentState.quaternion(), currentState.position());
