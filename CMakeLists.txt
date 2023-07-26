@@ -26,7 +26,7 @@ link_directories(
         ${GTSAM_LIBRARY_DIRS}
 )
 
-add_executable(imuPreintegration_node src/imuPreintegration.cpp)
+add_executable(imuPreintegration_node src/imuPreintegration.cpp src/imuPreintFun.cpp)
 
 target_link_libraries(imuPreintegration_node
   ${catkin_LIBRARIES} ${PCL_COMMON_LIBRARIES} ${PCL_IO_LIBRARIES} ${PCL_LIBRARIES} gtsam

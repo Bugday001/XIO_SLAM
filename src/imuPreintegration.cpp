@@ -1,5 +1,5 @@
 /**
- * 将cloud变换到world坐标系，提供给fast-planner
+ * imu预积分ros节点
  *
  * 2023.01.14
  */
@@ -26,8 +26,7 @@ imuPreintegration::imuPreintegration()
     path_pub_ = m_nh.advertise<nav_msgs::Path>("imu_path", 10, true);
     low_freq_odom_pub_ = m_nh.advertise<nav_msgs::Odometry>("low_mavros", 2000);
     getLidar = 0; // state: 0没接受过，1更新了，-1还没更新
-    qwb = Eigen::Quaterniond(Eigen::Vector4d(0, 0, 0, 1));
-    gw = Eigen::Vector3d(0, 0, -9.81);
+    xioState.gw = Eigen::Vector3d(0, 0, -9.81);
     // gtsam
     boost::shared_ptr<gtsam::PreintegrationParams> p = gtsam::PreintegrationParams::MakeSharedU(9.81);
     p->accelerometerCovariance = gtsam::Matrix33::Identity(3, 3) * pow(0.01, 2); // acc white noise in continuous
@@ -69,28 +68,18 @@ void imuPreintegration::dloHandler(const nav_msgs::Odometry::ConstPtr &msg)
     low_freq_odom_pub_.publish(*msg);
     currentCorrectionTime = msg->header.stamp.toSec();
     geometry_msgs::Point point = msg->pose.pose.position;
-    Pwb << point.x, point.y, point.z;
+    Eigen::Vector3d tmpp(point.x, point.y, point.z);
     geometry_msgs::Quaternion ori = msg->pose.pose.orientation;
-    qwb = Eigen::Quaterniond(Eigen::Vector4d(ori.x, ori.y, ori.z, ori.w));
+    Eigen::Quaterniond tmpq = Eigen::Quaterniond(Eigen::Vector4d(ori.x, ori.y, ori.z, ori.w));
     geometry_msgs::Vector3 v = msg->twist.twist.linear;
     Eigen::Vector3d tmpv(v.x, v.y, v.z);
-    while(!imuVwTime.empty()&&imuVwTime.front()<currentCorrectionTime) {
-        imuVwTime.pop_front();
-        imuVw.pop_front();
-    }
-    //直接使用外部输入的速度，在此使用lio-sam的gtsam估计得到的
-    if(!imuVw.empty()&&false) {
-        Vw = (tmpv+imuVw.front())/2;
-        std::cout<<Vw<<std::endl;
-    }
-    else
-        Vw = tmpv;
-    
+    xioState.updateState(tmpp, tmpv, tmpq);
+
     getLidar = 1;
     // gtsam
     gtsam::Rot3 R = gtsam::Quaternion(ori.w, ori.x, ori.y, ori.z);
     prevStateOdom = gtsam::NavState(R, gtsam::Point3(point.x, point.y, point.z),
-                                    (gtsam::Vector(3) << Vw(0), Vw(1), Vw(2)).finished());
+                                    (gtsam::Vector(3) << tmpv(0), tmpv(1), tmpv(2)).finished());
     imuIntegratorImu_->resetIntegrationAndSetBias(prevBias_);
     //接收到外部odom时要从queue中取值积分，避免跳跃
 
@@ -114,19 +103,7 @@ void imuPreintegration::dloHandler(const nav_msgs::Odometry::ConstPtr &msg)
             // bugday
             Eigen::Vector3d gyro(thisImu->angular_velocity.x, thisImu->angular_velocity.y, thisImu->angular_velocity.z);
             Eigen::Vector3d acc(thisImu->linear_acceleration.x, thisImu->linear_acceleration.y, thisImu->linear_acceleration.z);
-            // delta_q = [1 , 1/2 * thetax , 1/2 * theta_y, 1/2 * theta_z]
-            Eigen::Quaterniond dq;
-            Eigen::Vector3d dtheta_half = gyro * dt / 2.0;
-            dq.w() = 1;
-            dq.x() = dtheta_half.x();
-            dq.y() = dtheta_half.y();
-            dq.z() = dtheta_half.z();
-            dq.normalize();
-            /// imu 动力学模型 欧拉积分
-            Eigen::Vector3d acc_w = qwb * (acc) + gw; // aw = Rwb * ( acc_body - acc_bias ) + gw
-            qwb = qwb * dq;
-            Pwb = Pwb + Vw * dt + 0.5 * dt * dt * acc_w;
-            Vw = Vw + acc_w * dt;
+            xio::imuPropagate(xioState, gyro, acc, dt);
             // end bugday
 #if use_gtsam
             imuIntegratorImu_->integrateMeasurement(gtsam::Vector3(thisImu->linear_acceleration.x, thisImu->linear_acceleration.y, thisImu->linear_acceleration.z),
@@ -212,21 +189,7 @@ void imuPreintegration::imuHandler(const sensor_msgs::Imu::ConstPtr &msg)
     Eigen::Vector3d acc(imuData.linear_acceleration.x,
                         imuData.linear_acceleration.y,
                         imuData.linear_acceleration.z);
-    // delta_q = [1 , 1/2 * thetax , 1/2 * theta_y, 1/2 * theta_z]
-    Eigen::Quaterniond dq;
-    Eigen::Vector3d dtheta_half = gyro * dt / 2.0;
-    dq.w() = 1;
-    dq.x() = dtheta_half.x();
-    dq.y() = dtheta_half.y();
-    dq.z() = dtheta_half.z();
-    dq.normalize();
-    /// imu 动力学模型 欧拉积分
-    Eigen::Vector3d acc_w = qwb * (acc) + gw; // aw = Rwb * ( acc_body - acc_bias ) + gw
-    qwb = qwb * dq;
-    Pwb = Pwb + Vw * dt + 0.5 * dt * dt * acc_w;
-    Vw = Vw + acc_w * dt;
-    imuVw.push_back(Vw);
-    imuVwTime.push_back(imuTime);
+    xio::imuPropagate(xioState, gyro, acc, dt);
     double eigenTime = ros::Time::now().toSec();
     // gtsam预积分
 #if use_gtsam
@@ -254,18 +217,18 @@ void imuPreintegration::rosPublish(std_msgs::Header header)
     // odom
     nav_msgs::Odometry odom;
     geometry_msgs::Point point;
-    point.x = Pwb(0);
-    point.y = Pwb(1);
-    point.z = Pwb(2);
+    point.x = xioState.Pwb(0);
+    point.y = xioState.Pwb(1);
+    point.z = xioState.Pwb(2);
     geometry_msgs::Quaternion ori;
-    ori.w = qwb.w();
-    ori.x = qwb.x();
-    ori.y = qwb.y();
-    ori.z = qwb.z();
+    ori.w = xioState.qwb.w();
+    ori.x = xioState.qwb.x();
+    ori.y = xioState.qwb.y();
+    ori.z = xioState.qwb.z();
     geometry_msgs::Vector3 v;
-    v.x = Vw(0);
-    v.y = Vw(1);
-    v.z = Vw(2);
+    v.x =xioState.Vw(0);
+    v.y = xioState.Vw(1);
+    v.z = xioState.Vw(2);
     odom.header = header;
     odom.header.frame_id = "map";
     odom.twist.twist.linear = v;

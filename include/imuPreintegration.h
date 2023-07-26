@@ -28,6 +28,8 @@
 #include<Eigen/Core>
 
 #include<vector>
+
+#include "imuPreintFun.h"
 class imuPreintegration
 {
 private:
@@ -39,17 +41,12 @@ private:
     double lastImuTime = -1;
     sensor_msgs::Imu lastImuData;
     std::deque<sensor_msgs::Imu> imuQueImu;
-    std::deque<Eigen::Vector3d> imuVw;
-    std::deque<double> imuVwTime;
     const double delta_t = 0;
     //lidar
     double lastImuQT = -1;
     double currentCorrectionTime;  //最新的lidar odom 时间
     //eigin preintegration
-    Eigen::Vector3d Pwb;              // position :    from  imu measurements
-    Eigen::Quaterniond qwb = Eigen::Quaterniond(Eigen::Vector4d(0,0,0,1));            // quaterniond:  from imu measurements
-    Eigen::Vector3d Vw;          // velocity  :   from imu measurements
-    Eigen::Vector3d gw = Eigen::Vector3d(0,0,-9.81);    // ENU frame
+    xio::NavState xioState;
     int getLidar;
     nav_msgs::Path imuPath;
     //gtsam
