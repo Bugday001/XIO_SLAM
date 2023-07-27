@@ -48,6 +48,7 @@ private:
 
   void getNextPose();
   void integrateIMU();
+  void imuPreintegration();
 
   void propagateS2S(Eigen::Matrix4f T);
   void propagateS2M();
@@ -81,7 +82,7 @@ private:
   ros::Publisher pose_pub;
   ros::Publisher keyframe_pub;
   ros::Publisher kf_pub;
-  ros::Publisher cur_cloud_t_pub;
+  ros::Publisher cur_cloud_t_pub, imu_odom_pub_;
 
   Eigen::Vector3f origin;
   std::vector<std::pair<Eigen::Vector3f, Eigen::Quaternionf>> trajectory;
@@ -123,7 +124,6 @@ private:
   double prev_frame_stamp;
   std::vector<double> comp_times;
 
-  nano_gicp::NanoGICP<PointType, PointType> gicp_s2s;
   nano_gicp::NanoGICP<PointType, PointType> gicp;
 
   pcl::CropBox<PointType> crop;
@@ -150,6 +150,8 @@ private:
 
   Eigen::Matrix4f imu_SE3;
 
+  Eigen::Vector3d prev_point_;
+
   struct XYZd {
     double x;
     double y;
@@ -172,6 +174,12 @@ private:
   ImuMeas imu_meas;
 
   boost::circular_buffer<ImuMeas> imu_buffer;
+  std::deque<sensor_msgs::Imu> imuQueImu;
+  xio::NavState xioState;
+  double lastImuT_imu;
+  double currentCorrectionTime;  //newest lidar odom time
+  xio::IMUPreintegration imuPreinteg_;
+
 
   static bool comparatorImu(ImuMeas m1, ImuMeas m2) {
     return (m1.stamp < m2.stamp);

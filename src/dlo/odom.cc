@@ -37,7 +37,7 @@ dlo::OdomNode::OdomNode(ros::NodeHandle node_handle) : nh(node_handle) {
   this->kf_pub = this->nh.advertise<nav_msgs::Odometry>("kfs", 1, true);
   this->keyframe_pub = this->nh.advertise<sensor_msgs::PointCloud2>("keyframe", 1, true);
   this->cur_cloud_t_pub = this->nh.advertise<sensor_msgs::PointCloud2>("cur_cloud_t", 1, true);
-
+  this->imu_odom_pub_ = this->nh.advertise<nav_msgs::Odometry>("dio_imu_odom", 1, true);
   this->odom.pose.pose.position.x = 0.;
   this->odom.pose.pose.position.y = 0.;
   this->odom.pose.pose.position.z = 0.;
@@ -99,14 +99,6 @@ dlo::OdomNode::OdomNode(ros::NodeHandle node_handle) : nh(node_handle) {
   this->concave_hull.setAlpha(this->keyframe_thresh_dist_);
   this->concave_hull.setKeepInformation(true);
 
-  this->gicp_s2s.setCorrespondenceRandomness(this->gicps2s_k_correspondences_);
-  this->gicp_s2s.setMaxCorrespondenceDistance(this->gicps2s_max_corr_dist_);
-  this->gicp_s2s.setMaximumIterations(this->gicps2s_max_iter_);
-  this->gicp_s2s.setTransformationEpsilon(this->gicps2s_transformation_ep_);
-  this->gicp_s2s.setEuclideanFitnessEpsilon(this->gicps2s_euclidean_fitness_ep_);
-  this->gicp_s2s.setRANSACIterations(this->gicps2s_ransac_iter_);
-  this->gicp_s2s.setRANSACOutlierRejectionThreshold(this->gicps2s_ransac_inlier_thresh_);
-
   this->gicp.setCorrespondenceRandomness(this->gicps2m_k_correspondences_);
   this->gicp.setMaxCorrespondenceDistance(this->gicps2m_max_corr_dist_);
   this->gicp.setMaximumIterations(this->gicps2m_max_iter_);
@@ -116,8 +108,6 @@ dlo::OdomNode::OdomNode(ros::NodeHandle node_handle) : nh(node_handle) {
   this->gicp.setRANSACOutlierRejectionThreshold(this->gicps2m_ransac_inlier_thresh_);
 
   pcl::Registration<PointType, PointType>::KdTreeReciprocalPtr temp;
-  this->gicp_s2s.setSearchMethodSource(temp, true);
-  this->gicp_s2s.setSearchMethodTarget(temp, true);
   this->gicp.setSearchMethodSource(temp, true);
   this->gicp.setSearchMethodTarget(temp, true);
 
@@ -168,6 +158,8 @@ dlo::OdomNode::OdomNode(ros::NodeHandle node_handle) : nh(node_handle) {
   }
   fclose(file);
 
+  lastImuT_imu = -1;
+  prev_point_ << 0,0,0;
   ROS_INFO("DLO Odom Node Initialized");
 }
 
@@ -487,15 +479,9 @@ void dlo::OdomNode::initializeInputTarget() {
 
   this->prev_frame_stamp = this->curr_frame_stamp;
 
-  // Convert ros message
-  this->target_cloud = pcl::PointCloud<PointType>::Ptr (new pcl::PointCloud<PointType>);
-  this->target_cloud = this->current_scan;
-  this->gicp_s2s.setInputTarget(this->target_cloud);
-  this->gicp_s2s.calculateTargetCovariances();
-
   // initialize keyframes
   pcl::PointCloud<PointType>::Ptr first_keyframe (new pcl::PointCloud<PointType>);
-  pcl::transformPointCloud (*this->target_cloud, *first_keyframe, this->T);
+  pcl::transformPointCloud (*this->current_scan, *first_keyframe, this->T);
 
   // voxelization for submap
   if (this->vf_submap_use_) {
@@ -508,11 +494,7 @@ void dlo::OdomNode::initializeInputTarget() {
   *this->keyframes_cloud += *first_keyframe;
   *this->keyframe_cloud = *first_keyframe;
 
-  // compute kdtree and keyframe normals (use gicp_s2s input source as temporary storage because it will be overwritten by setInputSources())
-  this->gicp_s2s.setInputSource(this->keyframe_cloud);
-  this->gicp_s2s.calculateSourceCovariances();
-  this->keyframe_normals.push_back(this->gicp_s2s.getSourceCovariances());
-
+  this->keyframe_normals.push_back(this->gicp.getSourceCovariances());
   this->publish_keyframe_thread = std::thread( &dlo::OdomNode::publishKeyframe, this );
   this->publish_keyframe_thread.detach();
 
@@ -526,19 +508,8 @@ void dlo::OdomNode::initializeInputTarget() {
  **/
 
 void dlo::OdomNode::setInputSources(){
-
-  // set the input source for the S2S gicp
-  // this builds the KdTree of the source cloud
-  // this does not build the KdTree for s2m because force_no_update is true
-  this->gicp_s2s.setInputSource(this->current_scan);
-
-  // set pcl::Registration input source for S2M gicp using custom NanoGICP function
-  this->gicp.registerInputSource(this->current_scan);
-
-  // now set the KdTree of S2M gicp using previously built KdTree
-  this->gicp.source_kdtree_ = this->gicp_s2s.source_kdtree_;
-  this->gicp.source_covs_.clear();
-
+  this->gicp.setInputSource(this->current_scan);
+  this->gicp.calculateSourceCovariances();
 }
 
 
@@ -659,7 +630,6 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
     this->initializeDLO();
     return;
   }
-
   // Preprocess points
   this->preprocessPoints();
 
@@ -672,33 +642,39 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
     this->setAdaptiveParams();
   }
 
+  // Set new frame as input source for both gicp objects
+  this->setInputSources();
+
   // Set initial frame as target
-  if(this->target_cloud == nullptr) {
+  if (this->keyframes.size() == 0) {
     this->initializeInputTarget();
     return;
   }
 
   // Set source frame
-  this->source_cloud = pcl::PointCloud<PointType>::Ptr (new pcl::PointCloud<PointType>);
-  this->source_cloud = this->current_scan;
-
-  // Set new frame as input source for both gicp objects
-  this->setInputSources();
+  // this->source_cloud = pcl::PointCloud<PointType>::Ptr (new pcl::PointCloud<PointType>);
+  // this->source_cloud = this->current_scan;
 
   // Get the next pose via IMU + S2S + S2M
   this->getNextPose();
-
   // Update current keyframe poses and map
   this->updateKeyframes();
-
   // Update trajectory
   this->trajectory.push_back( std::make_pair(this->pose, this->rotq) );
 
-  // Update next time stamp
-  this->prev_frame_stamp = this->curr_frame_stamp;
-
   // Update some statistics
   this->comp_times.push_back(ros::Time::now().toSec() - then);
+  // imu 积分
+  static int cnt = 0;
+  if(cnt>3) {
+    imuPreintegration();
+    cnt=0;
+  }
+  cnt++;
+  //Update next point
+  this->prev_point_ = this->pose.cast<double>();
+  // Update next time stamp
+  this->prev_frame_stamp = this->curr_frame_stamp;
 
   // Publish stuff to ROS
   this->publish_thread = std::thread( &dlo::OdomNode::publishToROS, this );
@@ -707,7 +683,36 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
   // Debug statements and publish custom DLO message
   this->debug_thread = std::thread( &dlo::OdomNode::debug, this );
   this->debug_thread.detach();
+}
 
+/**
+ * 接收到lidar的odom时进行预积分
+*/
+void dlo::OdomNode::imuPreintegration() {
+  double lastImuQT = -1, delta_t = 0;
+  double dt_odom = this->curr_frame_stamp - this->prev_frame_stamp;
+  Eigen::Vector3d Vw = (this->pose.cast<double>()-this->prev_point_)/dt_odom;  //使用两个lidar位置计算速度作为积分初值
+  xioState.updateState(this->pose.cast<double>(), Vw, this->rotq.cast<double>());
+  while (!imuQueImu.empty() && imuQueImu.front().header.stamp.toSec() < this->curr_frame_stamp - delta_t) {
+      lastImuQT = imuQueImu.front().header.stamp.toSec();
+      imuQueImu.pop_front();
+  }
+  // repropogate
+  if (!imuQueImu.empty()) {
+    // reset bias use the newly optimized bias
+    // TO DO
+
+    // integrate imu message from the beginning of this optimization
+    for (int i = 0; i < (int)imuQueImu.size(); ++i) {
+        sensor_msgs::Imu *thisImu = &imuQueImu[i];
+        double imuTime = thisImu->header.stamp.toSec();
+        double dt = (lastImuQT < 0) ? (1.0 / 500.0) : (imuTime - lastImuQT);
+        Eigen::Vector3d gyro(thisImu->angular_velocity.x, thisImu->angular_velocity.y, thisImu->angular_velocity.z);
+        Eigen::Vector3d acc(thisImu->linear_acceleration.x, thisImu->linear_acceleration.y, thisImu->linear_acceleration.z);
+        imuPreinteg_.imuPropagate(xioState, gyro, acc, dt);
+        lastImuQT = imuTime;
+    }
+  }
 }
 
 
@@ -788,23 +793,39 @@ void dlo::OdomNode::imuCB(const sensor_msgs::Imu::ConstPtr& imu) {
     }
 
   } else {
-
-    // Apply the calibrated bias to the new IMU measurements
-    this->imu_meas.stamp = thisImu.header.stamp.toSec();
-
-    this->imu_meas.ang_vel.x = ang_vel[0] - this->imu_bias.gyro.x;
-    this->imu_meas.ang_vel.y = ang_vel[1] - this->imu_bias.gyro.y;
-    this->imu_meas.ang_vel.z = ang_vel[2] - this->imu_bias.gyro.z;
-
-    this->imu_meas.lin_accel.x = lin_accel[0];
-    this->imu_meas.lin_accel.y = lin_accel[1];
-    this->imu_meas.lin_accel.z = lin_accel[2];
-
     // Store into circular buffer
     this->mtx_imu.lock();
-    this->imu_buffer.push_front(this->imu_meas);
-    this->mtx_imu.unlock();
 
+    this->imu_buffer.push_front(this->imu_meas);
+    this->imuQueImu.push_back(thisImu);
+    double imuTime = thisImu.header.stamp.toSec();
+    double dt = (lastImuT_imu < 0) ? (1.0 / 500.0) : (imuTime - lastImuT_imu);
+    Eigen::Vector3d gyro(thisImu.angular_velocity.x, thisImu.angular_velocity.y, thisImu.angular_velocity.z);
+    Eigen::Vector3d acc(thisImu.linear_acceleration.x, thisImu.linear_acceleration.y, thisImu.linear_acceleration.z);
+    imuPreinteg_.imuPropagate(xioState, gyro, acc, dt);
+    lastImuT_imu = imuTime;
+    //publish 临时
+    nav_msgs::Odometry odom;
+    geometry_msgs::Point point;
+    point.x = xioState.Pwb(0);
+    point.y = xioState.Pwb(1);
+    point.z = xioState.Pwb(2);
+    geometry_msgs::Quaternion ori;
+    ori.w = xioState.qwb.w();
+    ori.x = xioState.qwb.x();
+    ori.y = xioState.qwb.y();
+    ori.z = xioState.qwb.z();
+    geometry_msgs::Vector3 v;
+    v.x =xioState.Vw(0);
+    v.y = xioState.Vw(1);
+    v.z = xioState.Vw(2);
+    odom.header = thisImu.header;
+    odom.header.frame_id = "map";
+    odom.twist.twist.linear = v;
+    odom.pose.pose.position = point;
+    odom.pose.pose.orientation = ori;
+    imu_odom_pub_.publish(odom);
+    this->mtx_imu.unlock();
   }
 
 }
@@ -822,31 +843,6 @@ void dlo::OdomNode::getNextPose() {
 
   // Align using IMU prior if available
   pcl::PointCloud<PointType>::Ptr aligned (new pcl::PointCloud<PointType>);
-
-  if (this->imu_use_) {
-    this->integrateIMU();
-    // this->imu_SE3(2, 3) = this->uwbPoint.z;
-    this->gicp_s2s.align(*aligned, this->imu_SE3);
-  } else {
-    this->gicp_s2s.align(*aligned);
-  }
-
-  // Get the local S2S transform
-  Eigen::Matrix4f T_S2S = this->gicp_s2s.getFinalTransformation();
-
-  // Get the global S2S transform
-  this->propagateS2S(T_S2S);
-
-  // reuse covariances from s2s for s2m
-  this->gicp.source_covs_ = this->gicp_s2s.source_covs_;
-
-  // Swap source and target (which also swaps KdTrees internally) for next S2S
-  this->gicp_s2s.swapSourceAndTarget();
-
-  //
-  // FRAME-TO-SUBMAP
-  //
-
   // Get current global submap
   this->getSubmapKeyframes();
 
@@ -858,9 +854,12 @@ void dlo::OdomNode::getNextPose() {
     // Set target cloud's normals as submap normals
     this->gicp.setTargetCovariances( this->submap_normals );
   }
-
+  Eigen::Matrix4d guess_SE3 = Eigen::Matrix4d::Identity();
+  guess_SE3.block<3, 3>(0, 0) = xioState.qwb.matrix();
+  guess_SE3.block<3, 1>(0, 3) = xioState.Pwb;
+  this->T_s2s = guess_SE3.cast<float>();
   // Align with current submap with global S2S transformation as initial guess
-  this->gicp.align(*aligned, this->T_s2s);
+  this->gicp.align(*aligned, this->T_s2s);  //this->T_s2s
 
   // Get final transformation in global frame
   this->T = this->gicp.getFinalTransformation();
@@ -873,98 +872,7 @@ void dlo::OdomNode::getNextPose() {
   this->propagateS2M();
 
   // Set next target cloud as current source cloud
-  *this->target_cloud = *this->source_cloud;
-
-}
-
-
-/**
- * Integrate IMU
- **/
-
-void dlo::OdomNode::integrateIMU() {
-
-  // Extract IMU data between the two frames
-  std::vector<ImuMeas> imu_frame;
-
-  for (const auto& i : this->imu_buffer) {
-
-    // IMU data between two frames is when:
-    //   current frame's timestamp minus imu timestamp is positive
-    //   previous frame's timestamp minus imu timestamp is negative
-    double curr_frame_imu_dt = this->curr_frame_stamp - i.stamp;
-    double prev_frame_imu_dt = this->prev_frame_stamp - i.stamp;
-
-    if (curr_frame_imu_dt >= 0. && prev_frame_imu_dt <= 0.) {
-
-      imu_frame.push_back(i);
-
-    }
-
-  }
-
-  // Sort measurements by time
-  std::sort(imu_frame.begin(), imu_frame.end(), this->comparatorImu);
-
-  // Relative IMU integration of gyro and accelerometer
-  double curr_imu_stamp = 0.;
-  double prev_imu_stamp = 0.;
-  double dt;
-
-  Eigen::Quaternionf q = Eigen::Quaternionf::Identity();
-
-  for (uint32_t i = 0; i < imu_frame.size(); ++i) {
-
-    if (prev_imu_stamp == 0.) {
-      prev_imu_stamp = imu_frame[i].stamp;
-      continue;
-    }
-
-    // Calculate difference in imu measurement times IN SECONDS
-    curr_imu_stamp = imu_frame[i].stamp;
-    dt = curr_imu_stamp - prev_imu_stamp;
-    prev_imu_stamp = curr_imu_stamp;
-    
-    // Relative gyro propagation quaternion dynamics
-    Eigen::Quaternionf qq = q;
-    q.w() -= 0.5*( qq.x()*imu_frame[i].ang_vel.x + qq.y()*imu_frame[i].ang_vel.y + qq.z()*imu_frame[i].ang_vel.z ) * dt;
-    q.x() += 0.5*( qq.w()*imu_frame[i].ang_vel.x - qq.z()*imu_frame[i].ang_vel.y + qq.y()*imu_frame[i].ang_vel.z ) * dt;
-    q.y() += 0.5*( qq.z()*imu_frame[i].ang_vel.x + qq.w()*imu_frame[i].ang_vel.y - qq.x()*imu_frame[i].ang_vel.z ) * dt;
-    q.z() += 0.5*( qq.x()*imu_frame[i].ang_vel.y - qq.y()*imu_frame[i].ang_vel.x + qq.w()*imu_frame[i].ang_vel.z ) * dt;
-
-  }
-
-  // Normalize quaternion
-  double norm = sqrt(q.w()*q.w() + q.x()*q.x() + q.y()*q.y() + q.z()*q.z());
-  q.w() /= norm; q.x() /= norm; q.y() /= norm; q.z() /= norm;
-
-  // Store IMU guess
-  this->imu_SE3 = Eigen::Matrix4f::Identity();
-  this->imu_SE3.block(0, 0, 3, 3) = q.toRotationMatrix();
-
-}
-
-
-/**
- * Propagate S2S Alignment
- * 更新最后一帧与前一帧的相对关系
- **/
-void dlo::OdomNode::propagateS2S(Eigen::Matrix4f T) {
-
-  this->T_s2s = this->T_s2s_prev * T;
-  this->T_s2s_prev = this->T_s2s;
-
-  this->pose_s2s   << this->T_s2s(0,3), this->T_s2s(1,3), this->T_s2s(2,3);
-  this->rotSO3_s2s << this->T_s2s(0,0), this->T_s2s(0,1), this->T_s2s(0,2),
-                      this->T_s2s(1,0), this->T_s2s(1,1), this->T_s2s(1,2),
-                      this->T_s2s(2,0), this->T_s2s(2,1), this->T_s2s(2,2);
-
-  Eigen::Quaternionf q(this->rotSO3_s2s);
-
-  // Normalize quaternion
-  double norm = sqrt(q.w()*q.w() + q.x()*q.x() + q.y()*q.y() + q.z()*q.z());
-  q.w() /= norm; q.x() /= norm; q.y() /= norm; q.z() /= norm;
-  this->rotq_s2s = q;
+  // *this->target_cloud = *this->source_cloud;
 
 }
 
@@ -1185,13 +1093,13 @@ void dlo::OdomNode::updateKeyframes() {
     // update keyframe vector
     this->keyframes.push_back(std::make_pair(std::make_pair(this->pose, this->rotq), this->current_scan_t));
 
-    // compute kdtree and keyframe normals (use gicp_s2s input source as temporary storage because it will be overwritten by setInputSources())
+    // compute kdtree and keyframe normals (use gicp input source as temporary storage because it will be overwritten by setInputSources())
     *this->keyframes_cloud += *this->current_scan_t;
     *this->keyframe_cloud = *this->current_scan_t;
 
-    this->gicp_s2s.setInputSource(this->keyframe_cloud);
-    this->gicp_s2s.calculateSourceCovariances();
-    this->keyframe_normals.push_back(this->gicp_s2s.getSourceCovariances());
+    this->gicp.setInputSource(this->keyframe_cloud);
+    this->gicp.calculateSourceCovariances();
+    this->keyframe_normals.push_back(this->gicp.getSourceCovariances());
 
     this->publish_keyframe_thread = std::thread( &dlo::OdomNode::publishKeyframe, this );
     this->publish_keyframe_thread.detach();
