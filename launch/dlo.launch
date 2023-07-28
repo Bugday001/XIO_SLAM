@@ -11,7 +11,8 @@
   <param name="use_sim_time" value="true"/>
   <arg name="robot_namespace" default="robot"/>
   <arg name="rviz" default="true"/>
-
+  <!-- /velodyne_points  /imu/data-->
+  <!-- /3Dlidar16_scan /mavros/imu/data-->
   <arg name="pointcloud_topic" default="/3Dlidar16_scan"/>
   <arg name="imu_topic" default="/mavros/imu/data"/>
 

@@ -11,10 +11,10 @@ namespace xio
     class NavState
     {
     public:
-        NavState(Vector3d p = Vector3d(0, 0, 0), Vector3d v = Vector3d(0, 0, 0), Quaterniond q = Quaterniond(Vector4d(0, 0, 0, 1)), Vector3d gw = Vector3d(0, 0, -9.81))
-            : Pwb(p), qwb(q), Vw(v), gw(gw)
-        {
-        }
+        NavState(Vector3d p = Vector3d(0, 0, 0), Vector3d v = Vector3d(0, 0, 0), 
+        Quaterniond q = Quaterniond(Vector4d(0, 0, 0, 1)),
+        Eigen::Vector3d bg = Vector3d(0, 0, 0), Eigen::Vector3d ba = Vector3d(0, 0, 0))
+            : Pwb(p), qwb(q), Vw(v), bg_(bg), ba_(ba){}
         /**
          * 更新状态
          */
@@ -28,15 +28,44 @@ namespace xio
         Eigen::Vector3d Pwb;    // position :    from  imu measurements
         Eigen::Quaterniond qwb; // quaterniond:  from imu measurements
         Eigen::Vector3d Vw;     // velocity  :   from imu measurements
-        Eigen::Vector3d gw;     // ENU frame
+        Eigen::Vector3d bg_;  // gyro 零偏
+        Eigen::Vector3d ba_;  // acce 零偏
     };
 
     class IMUPreintegration
     {
+    private:
+        Eigen::Vector3d dv_, dp_;
+        Eigen::Quaterniond dq_;
+        double dt_;
+        Eigen::Vector3d bg_, ba_;
+        Eigen::Vector3d gw_;  // ENU frame
     public:
+        IMUPreintegration() {
+            dv_ << 0,0,0;
+            dp_ << 0,0,0;
+            bg_ <<0,0,0;
+            ba_ <<0,0,0;
+            dq_ = Quaterniond(Vector4d(0, 0, 0, 1));
+            gw_ = Eigen::Vector3d(0, 0,-9.81);
+            dt_= 0;
+        }
+        /**
+         * reset param
+        */
+        void resetIntegrationAndSetBias(Eigen::Vector3d bg, Eigen::Vector3d ba) {
+            dv_ << 0,0,0;
+            dp_ << 0,0,0;
+            dq_ = Quaterniond(Vector4d(0, 0, 0, 1));
+            bg_  = bg;
+            ba_ = ba;
+            dt_ = 0;
+        }
         // 预积分函数
-        void imuPropagate(NavState & state, Eigen::Vector3d gyro, Eigen::Vector3d acc, double dt)
+        void imuPropagate(Eigen::Vector3d gyro, Eigen::Vector3d acc, double dt)
         {
+            gyro = gyro - bg_;
+            acc = acc - ba_;
             // delta_q = [1 , 1/2 * thetax , 1/2 * theta_y, 1/2 * theta_z]
             Eigen::Quaterniond dq;
             Eigen::Vector3d dtheta_half = gyro * dt / 2.0;
@@ -46,10 +75,24 @@ namespace xio
             dq.z() = dtheta_half.z();
             dq.normalize();
             /// imu 动力学模型 欧拉积分
-            Eigen::Vector3d acc_w = state.qwb * (acc) + state.gw; // aw = Rwb * ( acc_body - acc_bias ) + gw
-            state.qwb = state.qwb * dq;
-            state.Pwb = state.Pwb + state.Vw * dt + 0.5 * dt * dt * acc_w;
-            state.Vw = state.Vw + acc_w * dt;
+            Eigen::Vector3d acc_w = dq_ * (acc); 
+            dq_ = dq_ * dq;
+            dp_ = dp_ + dv_ * dt + 0.5 * dt * dt * acc_w;
+            dv_ = dv_ + acc_w * dt;
+
+            //叠加积分的时间
+            dt_ += dt;
+        }
+
+        NavState Predict(const NavState &start) {
+            Eigen::Quaterniond Rj = start.qwb * dq_;
+            Eigen::Vector3d vj = start.qwb * dv_ + start.Vw + gw_ * dt_;
+            Eigen::Vector3d pj = start.qwb * dp_ + start.Pwb + start.Vw * dt_ + 0.5f * gw_ * dt_ * dt_;
+
+            auto state = NavState(pj, vj, Rj);
+            state.bg_ = bg_;
+            state.ba_ = ba_;
+            return state;
         }
     };
     

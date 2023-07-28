@@ -10,6 +10,12 @@
 #include "dlo/dlo.h"
 #include "imuPreintFun.h"
 
+#include <g2o/core/block_solver.h>
+#include <g2o/core/optimization_algorithm_levenberg.h>
+#include <g2o/core/robust_kernel.h>
+#include <g2o/core/sparse_block_matrix.h>
+#include <g2o/solvers/eigen/linear_solver_eigen.h>
+
 class dlo::OdomNode {
 
 public:
@@ -47,10 +53,9 @@ private:
   void gravityAlign();
 
   void getNextPose();
-  void integrateIMU();
   void imuPreintegration();
+  void Optimize();
 
-  void propagateS2S(Eigen::Matrix4f T);
   void propagateS2M();
 
   void setAdaptiveParams();
@@ -175,7 +180,7 @@ private:
 
   boost::circular_buffer<ImuMeas> imu_buffer;
   std::deque<sensor_msgs::Imu> imuQueImu;
-  xio::NavState xioState;
+  xio::NavState xioState, lidarState;
   double lastImuT_imu;
   double currentCorrectionTime;  //newest lidar odom time
   xio::IMUPreintegration imuPreinteg_;

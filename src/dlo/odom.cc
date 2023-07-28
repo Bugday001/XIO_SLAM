@@ -651,11 +651,7 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
     return;
   }
 
-  // Set source frame
-  // this->source_cloud = pcl::PointCloud<PointType>::Ptr (new pcl::PointCloud<PointType>);
-  // this->source_cloud = this->current_scan;
-
-  // Get the next pose via IMU + S2S + S2M
+  // Get the next pose via IMU + S2M
   this->getNextPose();
   // Update current keyframe poses and map
   this->updateKeyframes();
@@ -664,9 +660,10 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
 
   // Update some statistics
   this->comp_times.push_back(ros::Time::now().toSec() - then);
+
   // imu 积分
   static int cnt = 0;
-  if(cnt>3) {
+  if(cnt>-1) {
     imuPreintegration();
     cnt=0;
   }
@@ -690,9 +687,11 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
 */
 void dlo::OdomNode::imuPreintegration() {
   double lastImuQT = -1, delta_t = 0;
+
   double dt_odom = this->curr_frame_stamp - this->prev_frame_stamp;
   Eigen::Vector3d Vw = (this->pose.cast<double>()-this->prev_point_)/dt_odom;  //使用两个lidar位置计算速度作为积分初值
-  xioState.updateState(this->pose.cast<double>(), Vw, this->rotq.cast<double>());
+  lidarState.updateState(this->pose.cast<double>(), Vw, this->rotq.cast<double>());
+
   while (!imuQueImu.empty() && imuQueImu.front().header.stamp.toSec() < this->curr_frame_stamp - delta_t) {
       lastImuQT = imuQueImu.front().header.stamp.toSec();
       imuQueImu.pop_front();
@@ -701,7 +700,8 @@ void dlo::OdomNode::imuPreintegration() {
   if (!imuQueImu.empty()) {
     // reset bias use the newly optimized bias
     // TO DO
-
+    Eigen::Vector3d bias(0,0,0);
+    imuPreinteg_.resetIntegrationAndSetBias(bias, bias);
     // integrate imu message from the beginning of this optimization
     for (int i = 0; i < (int)imuQueImu.size(); ++i) {
         sensor_msgs::Imu *thisImu = &imuQueImu[i];
@@ -709,7 +709,7 @@ void dlo::OdomNode::imuPreintegration() {
         double dt = (lastImuQT < 0) ? (1.0 / 500.0) : (imuTime - lastImuQT);
         Eigen::Vector3d gyro(thisImu->angular_velocity.x, thisImu->angular_velocity.y, thisImu->angular_velocity.z);
         Eigen::Vector3d acc(thisImu->linear_acceleration.x, thisImu->linear_acceleration.y, thisImu->linear_acceleration.z);
-        imuPreinteg_.imuPropagate(xioState, gyro, acc, dt);
+        imuPreinteg_.imuPropagate(gyro, acc, dt);
         lastImuQT = imuTime;
     }
   }
@@ -802,7 +802,8 @@ void dlo::OdomNode::imuCB(const sensor_msgs::Imu::ConstPtr& imu) {
     double dt = (lastImuT_imu < 0) ? (1.0 / 500.0) : (imuTime - lastImuT_imu);
     Eigen::Vector3d gyro(thisImu.angular_velocity.x, thisImu.angular_velocity.y, thisImu.angular_velocity.z);
     Eigen::Vector3d acc(thisImu.linear_acceleration.x, thisImu.linear_acceleration.y, thisImu.linear_acceleration.z);
-    imuPreinteg_.imuPropagate(xioState, gyro, acc, dt);
+    imuPreinteg_.imuPropagate(gyro, acc, dt);
+    xioState = imuPreinteg_.Predict(lidarState);
     lastImuT_imu = imuTime;
     //publish 临时
     nav_msgs::Odometry odom;
@@ -830,16 +831,25 @@ void dlo::OdomNode::imuCB(const sensor_msgs::Imu::ConstPtr& imu) {
 
 }
 
+/**
+ * 紧耦合，进行优化
+*/
+void dlo::OdomNode::Optimize() {
+  using BlockSolverType = g2o::BlockSolverX;
+  using LinearSolverType = g2o::LinearSolverEigen<BlockSolverType::PoseMatrixType>;
+
+  auto *solver = new g2o::OptimizationAlgorithmLevenberg(
+      g2o::make_unique<BlockSolverType>(g2o::make_unique<LinearSolverType>()));
+  g2o::SparseOptimizer optimizer;
+  optimizer.setAlgorithm(solver);
+
+}
 
 /**
  * Get Next Pose
  **/
 
 void dlo::OdomNode::getNextPose() {
-
-  //
-  // FRAME-TO-FRAME PROCEDURE
-  //
 
   // Align using IMU prior if available
   pcl::PointCloud<PointType>::Ptr aligned (new pcl::PointCloud<PointType>);
@@ -854,9 +864,10 @@ void dlo::OdomNode::getNextPose() {
     // Set target cloud's normals as submap normals
     this->gicp.setTargetCovariances( this->submap_normals );
   }
+  xio::NavState tmpState = imuPreinteg_.Predict(lidarState);
   Eigen::Matrix4d guess_SE3 = Eigen::Matrix4d::Identity();
-  guess_SE3.block<3, 3>(0, 0) = xioState.qwb.matrix();
-  guess_SE3.block<3, 1>(0, 3) = xioState.Pwb;
+  guess_SE3.block<3, 3>(0, 0) = tmpState.qwb.matrix();  //this->rotq.matrix().cast<double>();
+  guess_SE3.block<3, 1>(0, 3) = tmpState.Pwb;//this->pose.cast<double>()
   this->T_s2s = guess_SE3.cast<float>();
   // Align with current submap with global S2S transformation as initial guess
   this->gicp.align(*aligned, this->T_s2s);  //this->T_s2s
