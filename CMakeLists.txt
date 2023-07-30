@@ -117,9 +117,3 @@ add_executable (dlo_map_node src/dlo/map_node.cc src/dlo/map.cc)
 add_dependencies(dlo_map_node ${catkin_EXPORTED_TARGETS})
 target_compile_options(dlo_map_node PRIVATE ${OpenMP_FLAGS})
 target_link_libraries(dlo_map_node ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenMP_LIBS} Threads::Threads)
-
-# add_executable(imuPreintegration_node src/imu_preinteg/imuPreintegration.cpp src/imu_preinteg/imuPreintFun.cpp)
-
-# target_link_libraries(imuPreintegration_node
-#   ${catkin_LIBRARIES} ${PCL_COMMON_LIBRARIES} ${PCL_IO_LIBRARIES} ${PCL_LIBRARIES} gtsam
-# )
