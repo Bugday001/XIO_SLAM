@@ -160,6 +160,8 @@ dlo::OdomNode::OdomNode(ros::NodeHandle node_handle) : nh(node_handle) {
 
   lastImuT_imu = -1;
   prev_point_ << 0,0,0;
+  imuPreinteg_ = std::make_shared<xio::IMUPreintegration> ();
+
   ROS_INFO("DLO Odom Node Initialized");
 }
 
@@ -322,6 +324,32 @@ void dlo::OdomNode::publishToROS() {
   this->publishCloud();
 }
 
+/**
+ * 发布高频imu odom
+*/
+void dlo::OdomNode::publishImuOdom() {
+  //publish 临时
+  nav_msgs::Odometry odom;
+  geometry_msgs::Point point;
+  point.x = xioState.Pwb(0);
+  point.y = xioState.Pwb(1);
+  point.z = xioState.Pwb(2);
+  geometry_msgs::Quaternion ori;
+  ori.w = xioState.qwb.w();
+  ori.x = xioState.qwb.x();
+  ori.y = xioState.qwb.y();
+  ori.z = xioState.qwb.z();
+  geometry_msgs::Vector3 v;
+  v.x =xioState.Vw(0);
+  v.y = xioState.Vw(1);
+  v.z = xioState.Vw(2);
+  odom.header = imuQueImu.front().header;
+  odom.header.frame_id = "map";
+  odom.twist.twist.linear = v;
+  odom.pose.pose.position = point;
+  odom.pose.pose.orientation = ori;
+  imu_odom_pub_.publish(odom);
+}
 
 void dlo::OdomNode::publishCloud() {
   sensor_msgs::PointCloud2 cur_cloud_t_ros;
@@ -672,7 +700,8 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
   this->prev_point_ = this->pose.cast<double>();
   // Update next time stamp
   this->prev_frame_stamp = this->curr_frame_stamp;
-
+  //Update lidarState
+  this->preLidarState = this->lidarState;
   // Publish stuff to ROS
   this->publish_thread = std::thread( &dlo::OdomNode::publishToROS, this );
   this->publish_thread.detach();
@@ -687,10 +716,15 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
 */
 void dlo::OdomNode::imuPreintegration() {
   double lastImuQT = -1, delta_t = 0;
-
+  if(imuQueImu.empty())
+    return;
+  
   double dt_odom = this->curr_frame_stamp - this->prev_frame_stamp;
   Eigen::Vector3d Vw = (this->pose.cast<double>()-this->prev_point_)/dt_odom;  //使用两个lidar位置计算速度作为积分初值
-  lidarState.updateState(this->pose.cast<double>(), Vw, this->rotq.cast<double>());
+  this->lidarState.updateState(this->pose.cast<double>(), Vw, this->rotq.cast<double>());
+
+  //优化
+  Optimize();
 
   while (!imuQueImu.empty() && imuQueImu.front().header.stamp.toSec() < this->curr_frame_stamp - delta_t) {
       lastImuQT = imuQueImu.front().header.stamp.toSec();
@@ -701,7 +735,8 @@ void dlo::OdomNode::imuPreintegration() {
     // reset bias use the newly optimized bias
     // TO DO
     Eigen::Vector3d bias(0,0,0);
-    imuPreinteg_.resetIntegrationAndSetBias(bias, bias);
+    imuPreinteg_->resetIntegrationAndSetBias(this->lidarState.bg_, this->lidarState.ba_);
+    // std::cout<<"bg"<<this->lidarState.bg_<<"ba:" <<this->lidarState.ba_<<std::endl;
     // integrate imu message from the beginning of this optimization
     for (int i = 0; i < (int)imuQueImu.size(); ++i) {
         sensor_msgs::Imu *thisImu = &imuQueImu[i];
@@ -709,7 +744,7 @@ void dlo::OdomNode::imuPreintegration() {
         double dt = (lastImuQT < 0) ? (1.0 / 500.0) : (imuTime - lastImuQT);
         Eigen::Vector3d gyro(thisImu->angular_velocity.x, thisImu->angular_velocity.y, thisImu->angular_velocity.z);
         Eigen::Vector3d acc(thisImu->linear_acceleration.x, thisImu->linear_acceleration.y, thisImu->linear_acceleration.z);
-        imuPreinteg_.imuPropagate(gyro, acc, dt);
+        imuPreinteg_->imuPropagate(gyro, acc, dt);
         lastImuQT = imuTime;
     }
   }
@@ -802,30 +837,10 @@ void dlo::OdomNode::imuCB(const sensor_msgs::Imu::ConstPtr& imu) {
     double dt = (lastImuT_imu < 0) ? (1.0 / 500.0) : (imuTime - lastImuT_imu);
     Eigen::Vector3d gyro(thisImu.angular_velocity.x, thisImu.angular_velocity.y, thisImu.angular_velocity.z);
     Eigen::Vector3d acc(thisImu.linear_acceleration.x, thisImu.linear_acceleration.y, thisImu.linear_acceleration.z);
-    imuPreinteg_.imuPropagate(gyro, acc, dt);
-    xioState = imuPreinteg_.Predict(lidarState);
+    imuPreinteg_->imuPropagate(gyro, acc, dt);
+    xioState = imuPreinteg_->Predict(lidarState);
     lastImuT_imu = imuTime;
-    //publish 临时
-    nav_msgs::Odometry odom;
-    geometry_msgs::Point point;
-    point.x = xioState.Pwb(0);
-    point.y = xioState.Pwb(1);
-    point.z = xioState.Pwb(2);
-    geometry_msgs::Quaternion ori;
-    ori.w = xioState.qwb.w();
-    ori.x = xioState.qwb.x();
-    ori.y = xioState.qwb.y();
-    ori.z = xioState.qwb.z();
-    geometry_msgs::Vector3 v;
-    v.x =xioState.Vw(0);
-    v.y = xioState.Vw(1);
-    v.z = xioState.Vw(2);
-    odom.header = thisImu.header;
-    odom.header.frame_id = "map";
-    odom.twist.twist.linear = v;
-    odom.pose.pose.position = point;
-    odom.pose.pose.orientation = ori;
-    imu_odom_pub_.publish(odom);
+    publishImuOdom();
     this->mtx_imu.unlock();
   }
 
@@ -842,7 +857,142 @@ void dlo::OdomNode::Optimize() {
       g2o::make_unique<BlockSolverType>(g2o::make_unique<LinearSolverType>()));
   g2o::SparseOptimizer optimizer;
   optimizer.setAlgorithm(solver);
+  // std::cout<<"last:"<<std::endl;
+  // preLidarState.print();
+  // std::cout<<"current:"<<std::endl;
+  // lidarState.print();
+  // 上时刻顶点， pose, v, bg, ba
+  auto v0_pose = new VertexPose();
+  v0_pose->setId(0);
+  v0_pose->setEstimate(Sophus::SE3d(this->preLidarState.qwb,this->preLidarState.Pwb));
+  optimizer.addVertex(v0_pose);
 
+  auto v0_vel = new VertexVelocity();
+  v0_vel->setId(1);
+  v0_vel->setEstimate(this->preLidarState.Vw);
+  optimizer.addVertex(v0_vel);
+
+  auto v0_bg = new VertexGyroBias();
+  v0_bg->setId(2);
+  v0_bg->setEstimate(this->preLidarState.bg_);
+  optimizer.addVertex(v0_bg);
+
+  auto v0_ba = new VertexAccBias();
+  v0_ba->setId(3);
+  v0_ba->setEstimate(this->preLidarState.ba_);
+  optimizer.addVertex(v0_ba);
+
+  // 本时刻顶点，pose, v, bg, ba
+  auto v1_pose = new VertexPose();
+  v1_pose->setId(4);
+  v1_pose->setEstimate(Sophus::SE3d(this->lidarState.qwb,this->lidarState.Pwb));  // gicp pose作为初值
+  // v1_pose->setEstimate(current_nav_state_.GetSE3());  // 预测的pose作为初值
+  optimizer.addVertex(v1_pose);
+
+  auto v1_vel = new VertexVelocity();
+  v1_vel->setId(5);
+  v1_vel->setEstimate(this->lidarState.Vw);
+  optimizer.addVertex(v1_vel);
+
+  auto v1_bg = new VertexGyroBias();
+  v1_bg->setId(6);
+  v1_bg->setEstimate(this->lidarState.bg_);
+  optimizer.addVertex(v1_bg);
+
+  auto v1_ba = new VertexAccBias();
+  v1_ba->setId(7);
+  v1_ba->setEstimate(this->lidarState.ba_);
+  optimizer.addVertex(v1_ba);
+
+   // imu factor
+  //  imuPreinteg_->print();
+  auto edge_inertial = new EdgeInertial(imuPreinteg_);
+  edge_inertial->setVertex(0, v0_pose);
+  edge_inertial->setVertex(1, v0_vel);
+  edge_inertial->setVertex(2, v0_bg);
+  edge_inertial->setVertex(3, v0_ba);
+  edge_inertial->setVertex(4, v1_pose);
+  edge_inertial->setVertex(5, v1_vel);
+  auto *rk = new g2o::RobustKernelHuber();
+  rk->setDelta(200.0);
+  edge_inertial->setRobustKernel(rk);
+  optimizer.addEdge(edge_inertial);
+
+  // 零偏随机游走
+  auto *edge_gyro_rw = new EdgeGyroRW();
+  edge_gyro_rw->setVertex(0, v0_bg);
+  edge_gyro_rw->setVertex(1, v1_bg);
+  edge_gyro_rw->setInformation(Eigen::Matrix3d::Identity()*1e12);
+  optimizer.addEdge(edge_gyro_rw);
+
+  auto *edge_acc_rw = new EdgeAccRW();
+  edge_acc_rw->setVertex(0, v0_ba);
+  edge_acc_rw->setVertex(1, v1_ba);
+  edge_acc_rw->setInformation(Eigen::Matrix3d::Identity()*1e8);
+  optimizer.addEdge(edge_acc_rw);
+
+  // 上一帧pose, vel, bg, ba的先验
+  auto *edge_prior = new EdgePriorPoseNavState(this->preLidarState, prior_info_);
+  edge_prior->setVertex(0, v0_pose);
+  edge_prior->setVertex(1, v0_vel);
+  edge_prior->setVertex(2, v0_bg);
+  edge_prior->setVertex(3, v0_ba);
+  optimizer.addEdge(edge_prior);
+
+  /// 使用gicp的pose进行观测
+  auto *edge_ndt = new EdgeGNSS(v1_pose, Sophus::SE3d(this->lidarState.qwb,this->lidarState.Pwb));
+  edge_ndt->setInformation(Eigen::Matrix<double, 6, 6>::Identity()*1e4);
+  optimizer.addEdge(edge_ndt);
+
+  v0_bg->setFixed(true);
+  v0_ba->setFixed(true);
+
+  // go
+  optimizer.setVerbose(false);
+  optimizer.initializeOptimization();
+  optimizer.optimize(20);
+
+  // get results
+  this->lidarState.qwb = v1_pose->estimate().so3().unit_quaternion(); ;
+  this->lidarState.Pwb = v1_pose->estimate().translation();
+  this->lidarState.Vw = v1_vel->estimate();
+  this->lidarState.bg_ = v1_bg->estimate();
+  this->lidarState.ba_ = v1_ba->estimate();
+
+  // 计算当前时刻先验
+  // 构建hessian
+  // 15x2，顺序：v0_pose, v0_vel, v0_bg, v0_ba, v1_pose, v1_vel, v1_bg, v1_ba
+  //            0       6        9     12     15        21      24     27
+  Eigen::Matrix<double, 30, 30> H;
+  H.setZero();
+
+  H.block<24, 24>(0, 0) += edge_inertial->GetHessian();
+
+  Eigen::Matrix<double, 6, 6> Hgr = edge_gyro_rw->GetHessian();
+  H.block<3, 3>(9, 9) += Hgr.block<3, 3>(0, 0);
+  H.block<3, 3>(9, 24) += Hgr.block<3, 3>(0, 3);
+  H.block<3, 3>(24, 9) += Hgr.block<3, 3>(3, 0);
+  H.block<3, 3>(24, 24) += Hgr.block<3, 3>(3, 3);
+
+  Eigen::Matrix<double, 6, 6> Har = edge_acc_rw->GetHessian();
+  H.block<3, 3>(12, 12) += Har.block<3, 3>(0, 0);
+  H.block<3, 3>(12, 27) += Har.block<3, 3>(0, 3);
+  H.block<3, 3>(27, 12) += Har.block<3, 3>(3, 0);
+  H.block<3, 3>(27, 27) += Har.block<3, 3>(3, 3);
+
+  H.block<15, 15>(0, 0) += edge_prior->GetHessian();
+  H.block<6, 6>(15, 15) += edge_ndt->GetHessian();
+
+  H = xio::Marginalize(H, 0, 14);
+  prior_info_ = H.block<15, 15>(15, 15);
+
+  if (false) {
+      LOG(INFO) << "info trace: " << prior_info_.trace();
+      LOG(INFO) << "optimization done.";
+  }
+
+  // NormalizeVelocity();
+  // last_nav_state_ = current_nav_state_;
 }
 
 /**
@@ -864,7 +1014,7 @@ void dlo::OdomNode::getNextPose() {
     // Set target cloud's normals as submap normals
     this->gicp.setTargetCovariances( this->submap_normals );
   }
-  xio::NavState tmpState = imuPreinteg_.Predict(lidarState);
+  xio::NavState tmpState = imuPreinteg_->Predict(lidarState);
   Eigen::Matrix4d guess_SE3 = Eigen::Matrix4d::Identity();
   guess_SE3.block<3, 3>(0, 0) = tmpState.qwb.matrix();  //this->rotq.matrix().cast<double>();
   guess_SE3.block<3, 1>(0, 3) = tmpState.Pwb;//this->pose.cast<double>()

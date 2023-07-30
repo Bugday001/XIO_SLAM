@@ -1,4 +1,5 @@
-#pragma once
+#ifndef IMU_PREINTERATION
+#define IMU_PREINTERATION
 
 #include <ros/ros.h>
 #include <pcl_ros/point_cloud.h>
@@ -70,3 +71,5 @@ public:
 
     void rosPublish(std_msgs::Header header);
 };
+
+#endif

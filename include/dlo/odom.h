@@ -9,6 +9,7 @@
 
 #include "dlo/dlo.h"
 #include "imuPreintFun.h"
+#include "g2o_struct.h"
 
 #include <g2o/core/block_solver.h>
 #include <g2o/core/optimization_algorithm_levenberg.h>
@@ -40,6 +41,7 @@ private:
   void getParams();
 
   void publishToROS();
+  void publishImuOdom();
   void publishPose();
   void publishTransform();
   void publishKeyframe();
@@ -180,11 +182,12 @@ private:
 
   boost::circular_buffer<ImuMeas> imu_buffer;
   std::deque<sensor_msgs::Imu> imuQueImu;
-  xio::NavState xioState, lidarState;
+  xio::NavState xioState, lidarState, preLidarState;
   double lastImuT_imu;
   double currentCorrectionTime;  //newest lidar odom time
-  xio::IMUPreintegration imuPreinteg_;
-
+  std::shared_ptr<xio::IMUPreintegration> imuPreinteg_ = nullptr;
+//opt
+  Eigen::Matrix<double, 15, 15> prior_info_ = Eigen::Matrix<double, 15, 15>::Identity();
 
   static bool comparatorImu(ImuMeas m1, ImuMeas m2) {
     return (m1.stamp < m2.stamp);
