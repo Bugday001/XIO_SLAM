@@ -161,7 +161,9 @@ dlo::OdomNode::OdomNode(ros::NodeHandle node_handle) : nh(node_handle) {
   lastImuT_imu = -1;
   prev_point_ << 0,0,0;
   imuPreinteg_ = std::make_shared<xio::IMUPreintegration> ();
-
+  imuPreinteg_Opt_ = std::make_shared<xio::IMUPreintegration> ();
+  imuType = 1;
+  lastImuT_opt = -1;
   ROS_INFO("DLO Odom Node Initialized");
 }
 
@@ -256,6 +258,14 @@ void dlo::OdomNode::getParams() {
   ros::param::param<int>("~dlo/odomNode/gicp/s2m/ransac/iterations", this->gicps2m_ransac_iter_, 0);
   ros::param::param<double>("~dlo/odomNode/gicp/s2m/ransac/outlierRejectionThresh", this->gicps2m_ransac_inlier_thresh_, 0.05);
 
+  ros::param::param<std::vector<double>>("~dlo/odomNode/imu/extrinsicRot", extRotV, std::vector<double>());
+  ros::param::param<std::vector<double>>("~dlo/odomNode/imu/extrinsicRPY", extRPYV, std::vector<double>());
+  ros::param::param<std::vector<double>>("~dlo/odomNode/imu/extrinsicTrans", extTransV, std::vector<double>());
+  Eigen::Matrix3d extRPY;
+  extRot = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRotV.data(), 3, 3);
+  extRPY = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRPYV.data(), 3, 3);
+  // extTrans = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extTransV.data(), 3, 1);
+  extQRPY = Eigen::Quaterniond(extRPY).inverse();
 }
 
 
@@ -343,7 +353,7 @@ void dlo::OdomNode::publishImuOdom() {
   v.x =xioState.Vw(0);
   v.y = xioState.Vw(1);
   v.z = xioState.Vw(2);
-  odom.header = imuQueImu.front().header;
+  odom.header = imuQueImu.back().header;
   odom.header.frame_id = "map";
   odom.twist.twist.linear = v;
   odom.pose.pose.position = point;
@@ -635,6 +645,51 @@ void dlo::OdomNode::initializeDLO() {
 }
 
 
+sensor_msgs::Imu dlo::OdomNode::imuConverter(const sensor_msgs::Imu &imu_in)
+{
+    sensor_msgs::Imu imu_out = imu_in;
+    // rotate acceleration
+    Eigen::Vector3d acc(imu_in.linear_acceleration.x, imu_in.linear_acceleration.y, imu_in.linear_acceleration.z);
+    acc = extRot * acc;
+    imu_out.linear_acceleration.x = acc.x();
+    imu_out.linear_acceleration.y = acc.y();
+    imu_out.linear_acceleration.z = acc.z();
+    // rotate gyroscope
+    Eigen::Vector3d gyr(imu_in.angular_velocity.x, imu_in.angular_velocity.y, imu_in.angular_velocity.z);
+    gyr = extRot * gyr;
+    imu_out.angular_velocity.x = gyr.x();
+    imu_out.angular_velocity.y = gyr.y();
+    imu_out.angular_velocity.z = gyr.z();
+    // rotate roll pitch yaw
+    Eigen::Quaterniond q_from(imu_in.orientation.w, imu_in.orientation.x, imu_in.orientation.y,
+                              imu_in.orientation.z);
+    Eigen::Quaterniond q_final;
+    if (imuType == 0)
+    {
+        q_final = extQRPY;
+    }
+    else if (imuType == 1)
+        q_final = q_from * extQRPY;
+    else
+        std::cout << "pls set your imu_type, 0 for 6axis and 1 for 9axis" << std::endl;
+
+    q_final.normalize();
+    imu_out.orientation.x = q_final.x();
+    imu_out.orientation.y = q_final.y();
+    imu_out.orientation.z = q_final.z();
+    imu_out.orientation.w = q_final.w();
+
+    // if (sqrt(
+    //         q_final.x() * q_final.x() + q_final.y() * q_final.y() + q_final.z() * q_final.z() +
+    //         q_final.w() * q_final.w()) < 0.1)
+    // {
+    //     ROS_ERROR("Invalid quaternion, please use a 9-axis IMU!");
+    //     ros::shutdown();
+    // }
+
+    return imu_out;
+}
+
 /**
  * ICP Point Cloud Callback
  **/
@@ -721,10 +776,49 @@ void dlo::OdomNode::imuPreintegration() {
   
   double dt_odom = this->curr_frame_stamp - this->prev_frame_stamp;
   Eigen::Vector3d Vw = (this->pose.cast<double>()-this->prev_point_)/dt_odom;  //使用两个lidar位置计算速度作为积分初值
-  this->lidarState.updateState(this->pose.cast<double>(), Vw, this->rotq.cast<double>());
-
+  this->lidarState.updateState(this->pose.cast<double>(), Vw, this->rotq.cast<double>(), this->curr_frame_stamp);
+  //为优化的imu进行积分
+  // 0. initialize system
+  static bool systemInitialized = false;
+  if (systemInitialized == false)
+  {
+      // pop old IMU message
+      while (!imuQueOpt.empty())
+      {
+          if (imuQueOpt.front().header.stamp.toSec() < this->curr_frame_stamp - delta_t)
+          {
+              lastImuT_opt = imuQueOpt.front().header.stamp.toSec();
+              imuQueOpt.pop_front();
+          }
+          else
+              break;
+      }
+      systemInitialized = true;
+      return;
+  }
+  // 1. integrate imu data and optimize
+  while (!imuQueOpt.empty())
+  {
+      // pop and integrate imu data that is between two optimizations
+      sensor_msgs::Imu *thisImu = &imuQueOpt.front();
+      double imuTime = imuQueOpt.front().header.stamp.toSec();
+      if (imuTime < this->curr_frame_stamp - delta_t)
+      {
+          double dt = (lastImuT_opt < 0) ? (1.0 / 500.0) : (imuTime - lastImuT_opt);
+          Eigen::Vector3d gyro(thisImu->angular_velocity.x, thisImu->angular_velocity.y, thisImu->angular_velocity.z);
+          Eigen::Vector3d acc(thisImu->linear_acceleration.x, thisImu->linear_acceleration.y, thisImu->linear_acceleration.z);
+          imuPreinteg_Opt_->imuPropagate(gyro, acc, dt);
+          lastImuT_opt = imuTime;
+          imuQueOpt.pop_front();
+      }
+      else
+          break;
+  }
+  
   //优化
   Optimize();
+  imuPreinteg_Opt_->resetIntegrationAndSetBias(this->lidarState.bg_, this->lidarState.ba_);
+
 
   while (!imuQueImu.empty() && imuQueImu.front().header.stamp.toSec() < this->curr_frame_stamp - delta_t) {
       lastImuQT = imuQueImu.front().header.stamp.toSec();
@@ -770,7 +864,7 @@ void dlo::OdomNode::imuCB(const sensor_msgs::Imu::ConstPtr& imu) {
     return;
   }
 
-  sensor_msgs::Imu thisImu = pserver.imuConverter(*imu);
+  sensor_msgs::Imu thisImu = imuConverter(*imu);
 
   double ang_vel[3], lin_accel[3];
 
@@ -832,16 +926,19 @@ void dlo::OdomNode::imuCB(const sensor_msgs::Imu::ConstPtr& imu) {
     this->mtx_imu.lock();
 
     this->imu_buffer.push_front(this->imu_meas);
+    this->imuQueOpt.push_back(thisImu);
     this->imuQueImu.push_back(thisImu);
+    this->mtx_imu.unlock();
     double imuTime = thisImu.header.stamp.toSec();
     double dt = (lastImuT_imu < 0) ? (1.0 / 500.0) : (imuTime - lastImuT_imu);
     Eigen::Vector3d gyro(thisImu.angular_velocity.x, thisImu.angular_velocity.y, thisImu.angular_velocity.z);
     Eigen::Vector3d acc(thisImu.linear_acceleration.x, thisImu.linear_acceleration.y, thisImu.linear_acceleration.z);
     imuPreinteg_->imuPropagate(gyro, acc, dt);
     xioState = imuPreinteg_->Predict(lidarState);
+    xioState.time_stamp_ = imuTime;
     lastImuT_imu = imuTime;
     publishImuOdom();
-    this->mtx_imu.unlock();
+
   }
 
 }
@@ -905,8 +1002,9 @@ void dlo::OdomNode::Optimize() {
   optimizer.addVertex(v1_ba);
 
    // imu factor
-  //  imuPreinteg_->print();
-  auto edge_inertial = new EdgeInertial(imuPreinteg_);
+  //  imuPreinteg_Opt_->print();
+  // std::cout<<imuPreinteg_Opt_->dt_<<",  "<<lidarState.time_stamp_-preLidarState.time_stamp_<<std::endl;
+  auto edge_inertial = new EdgeInertial(imuPreinteg_Opt_);
   edge_inertial->setVertex(0, v0_pose);
   edge_inertial->setVertex(1, v0_vel);
   edge_inertial->setVertex(2, v0_bg);

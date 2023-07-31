@@ -59,6 +59,7 @@ private:
   void Optimize();
 
   void propagateS2M();
+  sensor_msgs::Imu imuConverter(const sensor_msgs::Imu &imu_in);
 
   void setAdaptiveParams();
 
@@ -75,8 +76,6 @@ private:
   void debug();
 
   double first_imu_time;
-
-  xio::ParamServer pserver;
 
   ros::NodeHandle nh;
   ros::Timer abort_timer;
@@ -178,17 +177,24 @@ private:
     XYZd lin_accel;
   };
 
+  //imu
   ImuMeas imu_meas;
-
+  std::vector<double> extRotV;
+  std::vector<double> extRPYV;
+  std::vector<double> extTransV;
+  Eigen::Matrix3d extRot;
+  Eigen::Quaterniond extQRPY;
+  int imuType;
   boost::circular_buffer<ImuMeas> imu_buffer;
-  std::deque<sensor_msgs::Imu> imuQueImu;
+  std::deque<sensor_msgs::Imu> imuQueImu, imuQueOpt;
+
   xio::NavState xioState, lidarState, preLidarState;
   double lastImuT_imu;
   double currentCorrectionTime;  //newest lidar odom time
-  std::shared_ptr<xio::IMUPreintegration> imuPreinteg_ = nullptr;
-//opt
+  std::shared_ptr<xio::IMUPreintegration> imuPreinteg_ = nullptr, imuPreinteg_Opt_ = nullptr;
+  //opt
   Eigen::Matrix<double, 15, 15> prior_info_ = Eigen::Matrix<double, 15, 15>::Identity();
-
+  double lastImuT_opt;
   static bool comparatorImu(ImuMeas m1, ImuMeas m2) {
     return (m1.stamp < m2.stamp);
   };
