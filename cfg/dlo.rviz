@@ -8,7 +8,9 @@ Panels:
         - /Odometry1/Shape1
         - /Keyframes1/Shape1
         - /Map1/Autocompute Value Bounds1
-        - /Odometry2
+        - /Path1
+        - /Path1/Status1
+        - /Odometry2/Shape1
         - /Odometry3
         - /Odometry3/Shape1
       Splitter Ratio: 0.3785558044910431
@@ -217,8 +219,8 @@ Visualization Manager:
       Head Diameter: 0.30000001192092896
       Head Length: 0.20000000298023224
       Length: 0.30000001192092896
-      Line Style: Lines
-      Line Width: 0.029999999329447746
+      Line Style: Billboards
+      Line Width: 0.10000000149011612
       Name: Path
       Offset:
         X: 0
@@ -304,7 +306,7 @@ Visualization Manager:
   Global Options:
     Background Color: 64; 64; 64
     Default Light: true
-    Fixed Frame: map
+    Fixed Frame: robot/odom
     Frame Rate: 60
   Name: root
   Tools:
@@ -328,25 +330,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 16.05082893371582
+      Distance: 18.42377471923828
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.6838696599006653
-        Y: -0.9656376838684082
-        Z: 5.331056118011475
+        X: -2.5911145210266113
+        Y: -3.576220750808716
+        Z: -1.0083855390548706
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.29979753494262695
+      Pitch: 1.2497963905334473
       Target Frame: robot/base_link
       Value: Orbit (rviz)
-      Yaw: 0.11177680641412735
+      Yaw: 1.6931177377700806
     Saved: ~
 Window Geometry:
   Displays:

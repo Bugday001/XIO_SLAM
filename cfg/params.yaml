@@ -10,7 +10,7 @@
 dlo:
 
   odomNode:
-
+    debugVerbose: true
     initialPose:
       use: false
       position:

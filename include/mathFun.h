@@ -119,6 +119,15 @@ namespace xio{
 
         return res;
     }
+
+    /**
+     * 限制最大最小值
+    */
+    inline double maxMin(double src, double maxN, double minN) {
+        if(src>maxN) src = maxN;
+        if(src<minN) src = minN;
+        return src;
+    }
 }
 
 #endif

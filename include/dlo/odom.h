@@ -57,6 +57,7 @@ private:
   void getNextPose();
   void imuPreintegration();
   void Optimize();
+  void NormalizeVelocity();
 
   void propagateS2M();
   sensor_msgs::Imu imuConverter(const sensor_msgs::Imu &imu_in);
@@ -195,6 +196,9 @@ private:
   //opt
   Eigen::Matrix<double, 15, 15> prior_info_ = Eigen::Matrix<double, 15, 15>::Identity();
   double lastImuT_opt;
+
+  bool debugVerbose;
+
   static bool comparatorImu(ImuMeas m1, ImuMeas m2) {
     return (m1.stamp < m2.stamp);
   };

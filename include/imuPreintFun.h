@@ -62,8 +62,8 @@ namespace xio
         Matrix3d dV_dba_ = Matrix3d::Zero();
         Matrix3d dP_dbg_ = Matrix3d::Zero();
         Matrix3d dP_dba_ = Matrix3d::Zero();
-        Eigen::Matrix<double, 9, 9> cov_ = Eigen::Matrix<double, 9, 9>::Zero();              // 累计噪声矩阵
-        Eigen::Matrix<double, 6, 6> noise_gyro_acce_ = Eigen::Matrix<double, 6, 6>::Zero();  // 测量噪声矩阵
+        Eigen::Matrix<double, 9, 9> cov_;              // 累计噪声矩阵
+        Eigen::Matrix<double, 6, 6> noise_gyro_acce_;  // 测量噪声矩阵
     public:
         IMUPreintegration() {
             dv_ << 0,0,0;
@@ -73,6 +73,13 @@ namespace xio
             dq_ = Quaterniond(Vector4d(0, 0, 0, 1));
             gw_ = Eigen::Vector3d(0, 0,-9.81);
             dt_= 0;
+            cov_ = Eigen::Matrix<double, 9, 9>::Zero();
+            dR_dbg_ = Matrix3d::Zero();
+            dV_dbg_ = Matrix3d::Zero();
+            dV_dba_ = Matrix3d::Zero();
+            dP_dbg_ = Matrix3d::Zero();
+            dP_dba_ = Matrix3d::Zero();
+            noise_gyro_acce_ = Eigen::Matrix<double, 6, 6>::Zero();
             double noise_gyro_ = 1e-2, noise_acce_ = 1e-1;
             const double ng2 = noise_gyro_ * noise_gyro_;
             const double na2 = noise_acce_ * noise_acce_;
@@ -85,9 +92,16 @@ namespace xio
             dv_ << 0,0,0;
             dp_ << 0,0,0;
             dq_ = Quaterniond(Vector4d(0, 0, 0, 1));
+            dt_ = 0;
+            cov_ = Eigen::Matrix<double, 9, 9>::Zero();
+            dR_dbg_ = Matrix3d::Zero();
+            dV_dbg_ = Matrix3d::Zero();
+            dV_dba_ = Matrix3d::Zero();
+            dP_dbg_ = Matrix3d::Zero();
+            dP_dba_ = Matrix3d::Zero();
+
             bg_  = bg;
             ba_ = ba;
-            dt_ = 0;
         }
 
         void print() {

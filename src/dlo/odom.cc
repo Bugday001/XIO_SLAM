@@ -258,6 +258,7 @@ void dlo::OdomNode::getParams() {
   ros::param::param<int>("~dlo/odomNode/gicp/s2m/ransac/iterations", this->gicps2m_ransac_iter_, 0);
   ros::param::param<double>("~dlo/odomNode/gicp/s2m/ransac/outlierRejectionThresh", this->gicps2m_ransac_inlier_thresh_, 0.05);
 
+  ros::param::param<bool>("~dlo/odomNode/debugVerbose",   this->debugVerbose, false);
   ros::param::param<std::vector<double>>("~dlo/odomNode/imu/extrinsicRot", extRotV, std::vector<double>());
   ros::param::param<std::vector<double>>("~dlo/odomNode/imu/extrinsicRPY", extRPYV, std::vector<double>());
   ros::param::param<std::vector<double>>("~dlo/odomNode/imu/extrinsicTrans", extTransV, std::vector<double>());
@@ -354,7 +355,7 @@ void dlo::OdomNode::publishImuOdom() {
   v.y = xioState.Vw(1);
   v.z = xioState.Vw(2);
   odom.header = imuQueImu.back().header;
-  odom.header.frame_id = "map";
+  odom.header.frame_id = this->odom_frame;
   odom.twist.twist.linear = v;
   odom.pose.pose.position = point;
   odom.pose.pose.orientation = ori;
@@ -983,7 +984,6 @@ void dlo::OdomNode::Optimize() {
   auto v1_pose = new VertexPose();
   v1_pose->setId(4);
   v1_pose->setEstimate(Sophus::SE3d(this->lidarState.qwb,this->lidarState.Pwb));  // gicp pose作为初值
-  // v1_pose->setEstimate(current_nav_state_.GetSE3());  // 预测的pose作为初值
   optimizer.addVertex(v1_pose);
 
   auto v1_vel = new VertexVelocity();
@@ -1056,7 +1056,9 @@ void dlo::OdomNode::Optimize() {
   this->lidarState.Vw = v1_vel->estimate();
   this->lidarState.bg_ = v1_bg->estimate();
   this->lidarState.ba_ = v1_ba->estimate();
-
+  if(this->debugVerbose) {
+    this->lidarState.print();
+  }
   // 计算当前时刻先验
   // 构建hessian
   // 15x2，顺序：v0_pose, v0_vel, v0_bg, v0_ba, v1_pose, v1_vel, v1_bg, v1_ba
@@ -1091,6 +1093,17 @@ void dlo::OdomNode::Optimize() {
 
   // NormalizeVelocity();
   // last_nav_state_ = current_nav_state_;
+}
+
+/**
+ * 限制速度大小
+*/
+void dlo::OdomNode::NormalizeVelocity() {
+    Eigen::Vector3d v_body = this->lidarState.qwb.inverse() * this->lidarState.Vw;
+    v_body[0] = xio::maxMin(v_body[0], 1, -1);
+    v_body[1] = xio::maxMin(v_body[1], 1, -1);
+    v_body[2] = xio::maxMin(v_body[2], 1, -1);
+    this->lidarState.Vw = this->lidarState.qwb * v_body;
 }
 
 /**

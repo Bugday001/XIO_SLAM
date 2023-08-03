@@ -8,13 +8,17 @@
 -->
 
 <launch>
-  <param name="use_sim_time" value="false"/>
+  <param name="use_sim_time" value="true"/>
   <arg name="robot_namespace" default="robot"/>
   <arg name="rviz" default="true"/>
   <!-- /velodyne_points  /imu/data-->
   <!-- /3Dlidar16_scan /mavros/imu/data-->
-  <arg name="pointcloud_topic" default="/velodyne_points"/>
-  <arg name="imu_topic" default="/imu/data"/>
+    <arg name="pointcloud_topic" default="/3Dlidar16_scan"/>
+  <arg name="imu_topic" default="/mavros/imu/data"/>
+  <!-- <arg name="pointcloud_topic" default="/rslidar_points"/>
+  <arg name="imu_topic" default="/imu/data"/> -->
+    <!-- <arg name="pointcloud_topic" default="/points_raw"/>
+  <arg name="imu_topic" default="/imu_raw"/> -->
 
   <node pkg="tf" name="tf_map" type="static_transform_publisher" args="0 0 0 0 0 0 map robot/odom 100"/>
   <!-- DLO Odometry Node -->
@@ -53,6 +57,7 @@
   <node  pkg="offboard" type="odom2path_node" name="dlo_odom2path_node" output="screen">
     <remap from="/ground_truth/state" to="/robot/dlo/odom_node/odom"/>
     <remap from="/ground_truth/path" to="/dlo_path"/>
+    <param name="/path/frame_id" value="dlo/odom" />
   </node>
   <!-- RViz -->
   <node pkg="rviz" type="rviz" name="dlo_rviz" args="-d $(find xio)/cfg/dlo.rviz"/>
