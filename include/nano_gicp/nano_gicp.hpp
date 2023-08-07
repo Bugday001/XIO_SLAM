@@ -55,6 +55,8 @@
 
 namespace nano_gicp {
 
+typedef std::vector<Eigen::Matrix4d, Eigen::aligned_allocator<Eigen::Matrix4d>> CovarianceList;
+
 template<typename PointSource, typename PointTarget>
 class NanoGICP : public LsqRegistration<PointSource, PointTarget> {
 public:

@@ -85,6 +85,26 @@ namespace xio
             const double na2 = noise_acce_ * noise_acce_;
             noise_gyro_acce_.diagonal() << ng2, ng2, ng2, na2, na2, na2;
         }
+        IMUPreintegration(IMUPreintegration& imupreint) {
+            dv_ = imupreint.dv_;
+            dp_ = imupreint.dp_;
+            bg_ = imupreint.bg_;
+            ba_ = imupreint.ba_;
+            dq_ = imupreint.dq_;   
+            gw_ = Eigen::Vector3d(0, 0,-9.81);
+            dt_ = imupreint.dt_;
+            cov_ = imupreint.cov_;
+            dR_dbg_ = imupreint.dR_dbg_;
+            dV_dbg_ = imupreint.dV_dbg_;
+            dV_dba_ = imupreint.dV_dba_;
+            dP_dbg_ = imupreint.dP_dbg_;
+            dP_dba_ = imupreint.dP_dba_;
+            noise_gyro_acce_ = Eigen::Matrix<double, 6, 6>::Zero();
+            double noise_gyro_ = 1e-2, noise_acce_ = 1e-1;
+            const double ng2 = noise_gyro_ * noise_gyro_;
+            const double na2 = noise_acce_ * noise_acce_;
+            noise_gyro_acce_.diagonal() << ng2, ng2, ng2, na2, na2, na2;
+        }
         /**
          * reset param
         */
@@ -106,12 +126,13 @@ namespace xio
 
         void print() {
             std::cout<<"preint State:"<<std::endl;
+            std::cout<<"dt_: "<<dt_<<std::endl;
             std::cout<<"dp_:"<<std::endl<<dp_<<std::endl;
             std::cout<<"dq_:"<<std::endl<<dq_.matrix()<<std::endl;
             std::cout<<"dv_:"<<std::endl<<dv_<<std::endl;
             std::cout<<"bg_:"<<std::endl<<bg_<<std::endl;
             std::cout<<"ba_:"<<std::endl<<ba_<<std::endl;
-            std::cout<<"cov:"<<std::endl<<cov_<<std::endl;
+            std::cout<<"cov:"<<std::endl<<std::fixed<<std::setprecision(6)<<cov_<<std::endl;
         }
 
         // 预积分函数
@@ -206,5 +227,31 @@ namespace xio
         }
     };
 }
+// namespace xio {
+//   enum class SensorType { OUSTER, VELODYNE, HESAI, UNKNOWN };
 
+//   struct Point {
+//     Point(): data{0.f, 0.f, 0.f, 1.f} {}
+
+//     PCL_ADD_POINT4D;
+//     float intensity; // intensity
+//     union {
+//       std::uint32_t t; // time since beginning of scan in nanoseconds
+//       float time; // time since beginning of scan in seconds
+//       double timestamp; // absolute timestamp in seconds
+//     };
+//     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+//   } EIGEN_ALIGN16;
+// }
+
+// POINT_CLOUD_REGISTER_POINT_STRUCT(xio::Point,
+//                                  (float, x, x)
+//                                  (float, y, y)
+//                                  (float, z, z)
+//                                  (float, intensity, intensity)
+//                                  (std::uint32_t, t, t)
+//                                  (float, time, time)
+//                                  (double, timestamp, timestamp))
+
+// typedef xio::Point PointType;
 #endif

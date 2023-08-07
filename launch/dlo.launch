@@ -13,16 +13,18 @@
   <arg name="rviz" default="true"/>
   <!-- /velodyne_points  /imu/data-->
   <!-- /3Dlidar16_scan /mavros/imu/data-->
-    <arg name="pointcloud_topic" default="/3Dlidar16_scan"/>
-  <arg name="imu_topic" default="/mavros/imu/data"/>
+    <!-- <arg name="pointcloud_topic" default="/3Dlidar16_scan"/>
+  <arg name="imu_topic" default="/mavros/imu/data"/> -->
   <!-- <arg name="pointcloud_topic" default="/rslidar_points"/>
   <arg name="imu_topic" default="/imu/data"/> -->
-    <!-- <arg name="pointcloud_topic" default="/points_raw"/>
-  <arg name="imu_topic" default="/imu_raw"/> -->
+    <arg name="pointcloud_topic" default="/points_raw"/>
+  <arg name="imu_topic" default="/imu_raw"/>
 
-  <node pkg="tf" name="tf_map" type="static_transform_publisher" args="0 0 0 0 0 0 map robot/odom 100"/>
+    <!-- <arg name="pointcloud_topic" default="/robot/lidar"/>
+  <arg name="imu_topic" default="/robot/imu"/> -->
+
   <!-- DLO Odometry Node -->
-  <node ns="$(arg robot_namespace)" name="dlo_odom" pkg="xio" type="dlo_odom_node" output="screen" clear_params="true">
+  <node ns="$(arg robot_namespace)" name="xio_odom" pkg="xio" type="dlo_odom_node" output="screen" clear_params="true">
 
     <!-- Load parameters -->
     <rosparam file="$(find xio)/cfg/dlo.yaml" command="load"/>
@@ -41,7 +43,7 @@
   </node>
 
   <!-- DLO Mapping Node -->
-  <node ns="$(arg robot_namespace)" name="dlo_map" pkg="xio" type="dlo_map_node" output="screen" clear_params="true">
+  <node ns="$(arg robot_namespace)" name="xio_map" pkg="xio" type="dlo_map_node" output="screen" clear_params="true">
 
     <!-- Load parameters -->
     <rosparam file="$(find xio)/cfg/dlo.yaml" command="load"/>
@@ -54,10 +56,10 @@
 
   </node>
 
-  <node  pkg="offboard" type="odom2path_node" name="dlo_odom2path_node" output="screen">
+  <node  pkg="offboard" type="odom2path_node" name="xio_odom2path_node" output="screen">
     <remap from="/ground_truth/state" to="/robot/dlo/odom_node/odom"/>
-    <remap from="/ground_truth/path" to="/dlo_path"/>
-    <param name="/path/frame_id" value="dlo/odom" />
+    <remap from="/ground_truth/path" to="/xio_path"/>
+    <param name="/path/frame_id" value="/robot/odom" />
   </node>
   <!-- RViz -->
   <node pkg="rviz" type="rviz" name="dlo_rviz" args="-d $(find xio)/cfg/dlo.rviz"/>

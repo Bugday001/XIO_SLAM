@@ -27,8 +27,13 @@
 #endif
 
 #include <ros/ros.h>
+
+// BOOST
+#include <boost/format.hpp>
 #include <boost/circular_buffer.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/range/adaptor/indexed.hpp>
+#include <boost/range/adaptor/adjacent_filtered.hpp>
 
 #include <pcl/filters/crop_box.h>
 #include <pcl/filters/voxel_grid.h>

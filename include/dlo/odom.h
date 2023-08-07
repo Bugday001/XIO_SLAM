@@ -8,8 +8,8 @@
  ***********************************************************/
 
 #include "dlo/dlo.h"
-#include "imuPreintFun.h"
 #include "g2o_struct.h"
+#include "imuPreintFun.h"
 
 #include <g2o/core/block_solver.h>
 #include <g2o/core/optimization_algorithm_levenberg.h>
@@ -48,12 +48,14 @@ private:
   void publishCloud();
 
   void preprocessPoints();
+  void deskewPointcloud();
   void initializeInputTarget();
   void setInputSources();
 
   void initializeDLO();
   void gravityAlign();
 
+  bool imuOptPreint();
   void getNextPose();
   void imuPreintegration();
   void Optimize();
@@ -94,10 +96,11 @@ private:
   Eigen::Vector3f origin;
   std::vector<std::pair<Eigen::Vector3f, Eigen::Quaternionf>> trajectory;
   std::vector<std::pair<std::pair<Eigen::Vector3f, Eigen::Quaternionf>, pcl::PointCloud<PointType>::Ptr>> keyframes;
-  std::vector<std::vector<Eigen::Matrix4d, Eigen::aligned_allocator<Eigen::Matrix4d>>> keyframe_normals;
+  std::vector<nano_gicp::CovarianceList> keyframe_normals;
 
   std::atomic<bool> dlo_initialized;
   std::atomic<bool> imu_calibrated;
+  std::atomic<int> deskew_size;
 
   std::string odom_frame;
   std::string child_frame;
@@ -105,10 +108,17 @@ private:
   pcl::PointCloud<PointType>::Ptr original_scan;
   pcl::PointCloud<PointType>::Ptr current_scan;
   pcl::PointCloud<PointType>::Ptr current_scan_t;
-
-  pcl::PointCloud<PointType>::Ptr keyframes_cloud;
+  pcl::PointCloud<PointType>::Ptr deskewed_scan;
   pcl::PointCloud<PointType>::Ptr keyframe_cloud;
-  int num_keyframes;
+
+  bool deskew_status;
+  bool first_valid_scan;
+  bool deskew_;
+  
+  double scan_median_stamp;
+  double prev_scan_median_stamp;
+
+  int num_keyframes;  
 
   pcl::ConvexHull<PointType> convex_hull;
   pcl::ConcaveHull<PointType> concave_hull;
@@ -144,7 +154,7 @@ private:
   geometry_msgs::Point uwbPoint;
 
   Eigen::Matrix4f T;
-  Eigen::Matrix4f T_s2s, T_s2s_prev;
+  Eigen::Matrix4f T_s2s;
   Eigen::Quaternionf q_final;
 
   Eigen::Vector3f pose_s2s;
@@ -178,6 +188,9 @@ private:
     XYZd lin_accel;
   };
 
+
+  // Sensor Type
+  // xio::SensorType sensor;
   //imu
   ImuMeas imu_meas;
   std::vector<double> extRotV;
@@ -196,7 +209,7 @@ private:
   //opt
   Eigen::Matrix<double, 15, 15> prior_info_ = Eigen::Matrix<double, 15, 15>::Identity();
   double lastImuT_opt;
-
+  double delta_t = 0;
   bool debugVerbose;
 
   static bool comparatorImu(ImuMeas m1, ImuMeas m2) {
