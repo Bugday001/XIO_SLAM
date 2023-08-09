@@ -55,7 +55,7 @@ private:
   void initializeDLO();
   void gravityAlign();
 
-  void imuOptPreint(double end_time);
+  void imuOptPreint();
   void getNextPose();
   void imuPreintegration();
   void Optimize();
@@ -211,6 +211,7 @@ private:
   double lastImuT_imu;
   double currentCorrectionTime;  //newest lidar odom time
   std::shared_ptr<xio::IMUPreintegration> imuPreinteg_ = nullptr, imuPreinteg_Opt_ = nullptr;
+  double curr_frame_end_time;  //每帧雷达的点的最晚时间戳
   //opt
   bool imuOptInitialized = false;
   Eigen::Matrix<double, 15, 15> prior_info_ = Eigen::Matrix<double, 15, 15>::Identity();

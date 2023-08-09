@@ -493,19 +493,20 @@ void dlo::OdomNode::preprocessPoints(const sensor_msgs::PointCloud2ConstPtr& pc)
   if (this->sensor == xio::SensorType::UNKNOWN) {
     this->deskew_ = false;
   }
+    // Remove NaNs
+  std::vector<int> idx;
+  this->current_scan->is_dense = false;
+  pcl::removeNaNFromPointCloud(*this->current_scan, *this->current_scan, idx);
+
   *this->original_scan = *this->current_scan;
 
   if(this->deskew_ ) {
     this->deskewPointcloud();
   }
   else {
-    imuOptPreint(this->curr_frame_stamp);
+    this->curr_frame_end_time = this->curr_frame_stamp;
+    imuOptPreint();
   }
-
-  // Remove NaNs
-  std::vector<int> idx;
-  this->current_scan->is_dense = false;
-  pcl::removeNaNFromPointCloud(*this->current_scan, *this->current_scan, idx);
 
   // Crop Box Filter
   if (this->crop_use_) {
@@ -543,12 +544,13 @@ void dlo::OdomNode::deskewPointcloud() {
       { return pt.timestamp; };
   }
   this->totalPointNums = this->current_scan->size();
-  auto point = (*this->current_scan)[this->totalPointNums-1];
-  double end_time = extract_point_time(point);
+  auto point = (*this->current_scan)[0];
+  this->curr_frame_end_time = extract_point_time(point);
 
   //两帧之间imu积分
-  imuOptPreint(end_time);
+  imuOptPreint();
   if(imuOptInitialized == false || imu_states_.empty()) {
+    // std::cout<<"empty"<<std::endl;
     return;
   }
   this->deskewNums = 0;
@@ -566,6 +568,7 @@ void dlo::OdomNode::deskewPointcloud() {
       point.y = p_compensate(1);
       point.z = p_compensate(2);
   }
+  // std::cout<<std::setprecision(18)<<this->curr_frame_end_time<<std::endl;
 }
 
 
@@ -798,7 +801,9 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
 
   // imu 积分
   if(imuOptInitialized) {
+    this->mtx_imu.lock();
     imuPreintegration();
+    this->mtx_imu.unlock();
   }
   this->comp_times.push_back(ros::Time::now().toSec() - then);
   //Update next point
@@ -820,7 +825,7 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
  * 对两帧之间的imu进行积分
  * return 是否初始化了
 */
-void dlo::OdomNode::imuOptPreint(double end_time) 
+void dlo::OdomNode::imuOptPreint() 
 {
     //为优化的imu进行积分
   // 0. initialize system
@@ -829,7 +834,7 @@ void dlo::OdomNode::imuOptPreint(double end_time)
     // pop old IMU message
     while (!imuQueOpt.empty())
     {
-        if (imuQueOpt.front().header.stamp.toSec() < end_time - delta_t)
+        if (imuQueOpt.front().header.stamp.toSec() < this->curr_frame_end_time - delta_t)
         {
             lastImuT_opt = imuQueOpt.front().header.stamp.toSec();
             imuQueOpt.pop_front();
@@ -841,11 +846,12 @@ void dlo::OdomNode::imuOptPreint(double end_time)
     return;
     // return false;
   }
-  if (this->imuQueOpt.empty() || imuQueOpt.front().header.stamp.toSec() < end_time) {
+  if (this->imuQueOpt.empty() || imuQueOpt.back().header.stamp.toSec() < this->curr_frame_end_time) {
     // Wait for the latest IMU data
     //使用 std::unique_lock(通过 std::mutex) 来锁住当前线程
     std::unique_lock<decltype(this->mtx_imu)> lock(this->mtx_imu);
-    this->cv_imu_stamp.wait(lock, [this, &end_time]{ return imuQueOpt.back().header.stamp.toSec() >= end_time; });
+    double tmptime = this->curr_frame_end_time;
+    this->cv_imu_stamp.wait(lock, [this, &tmptime]{ return imuQueOpt.back().header.stamp.toSec() >= tmptime; });
   }
   imu_states_.clear();
   // 1. integrate imu data and optimize
@@ -854,7 +860,7 @@ void dlo::OdomNode::imuOptPreint(double end_time)
       // pop and integrate imu data that is between two optimizations
       sensor_msgs::Imu *thisImu = &imuQueOpt.front();
       double imuTime = imuQueOpt.front().header.stamp.toSec();
-      if (imuTime < end_time - delta_t)
+      if (imuTime < this->curr_frame_end_time - delta_t)
       {
           double dt = (lastImuT_opt < 0) ? (1.0 / 500.0) : (imuTime - lastImuT_opt);
           Eigen::Vector3d gyro(thisImu->angular_velocity.x, thisImu->angular_velocity.y, thisImu->angular_velocity.z);
@@ -889,7 +895,7 @@ void dlo::OdomNode::imuPreintegration() {
   imuPreinteg_Opt_->resetIntegrationAndSetBias(this->lidarState.bg_, this->lidarState.ba_);
 
 
-  while (!imuQueImu.empty() && imuQueImu.front().header.stamp.toSec() < this->curr_frame_stamp - delta_t) {
+  while (!imuQueImu.empty() && imuQueImu.front().header.stamp.toSec() < this->curr_frame_end_time - delta_t) {
       lastImuQT = imuQueImu.front().header.stamp.toSec();
       imuQueImu.pop_front();
   }
@@ -1074,8 +1080,8 @@ void dlo::OdomNode::Optimize() {
    // imu factor
   if(this->debugVerbose) {
     this->imuPreinteg_Opt_->print();
+    this->lidarState.print();
   }
-  // std::cout<<imuPreinteg_Opt_->dt_<<",  "<<lidarState.time_stamp_-preLidarState.time_stamp_<<std::endl;
   auto edge_inertial = new EdgeInertial(imuPreinteg_Opt_);
   edge_inertial->setVertex(0, v0_pose);
   edge_inertial->setVertex(1, v0_vel);
@@ -1134,6 +1140,7 @@ void dlo::OdomNode::Optimize() {
   this->lidarState.bg_ = v1_bg->estimate();
   this->lidarState.ba_ = v1_ba->estimate();
   if(this->debugVerbose) {
+    std::cout<<"after g2o: "<<std::endl;
     this->lidarState.print();
   }
   // 计算当前时刻先验

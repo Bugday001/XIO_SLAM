@@ -8,11 +8,10 @@ Panels:
         - /Odometry1/Shape1
         - /Keyframes1/Shape1
         - /Map1/Autocompute Value Bounds1
-        - /imu1
+        - /Path1
         - /imu1/Shape1
         - /Path2
         - /Odometry2/Shape1
-        - /PointCloud21
       Splitter Ratio: 0.3785558044910431
     Tree Height: 841
   - Class: rviz/Selection
@@ -33,7 +32,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: ""
+    SyncSource: Map
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -248,8 +247,8 @@ Visualization Manager:
       Head Diameter: 0.30000001192092896
       Head Length: 0.20000000298023224
       Length: 0.30000001192092896
-      Line Style: Lines
-      Line Width: 0.029999999329447746
+      Line Style: Billboards
+      Line Width: 0.10000000149011612
       Name: Path
       Offset:
         X: 0
@@ -353,25 +352,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 53.75587463378906
+      Distance: 6.952622890472412
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -12.162712097167969
-        Y: -6.104487895965576
-        Z: 16.687633514404297
+        X: -12.596205711364746
+        Y: -8.492010116577148
+        Z: 14.660093307495117
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.3947979211807251
+      Pitch: 0.5547977685928345
       Target Frame: robot/base_link
       Value: Orbit (rviz)
-      Yaw: 3.1112804412841797
+      Yaw: 3.5062835216522217
     Saved: ~
 Window Geometry:
   Displays:
