@@ -42,12 +42,12 @@ private:
 
   void publishToROS();
   void publishImuOdom();
-  void publishPose();
+  void publishPose(const ros::TimerEvent& e);
   void publishTransform();
   void publishKeyframe();
   void publishCloud();
 
-  void preprocessPoints();
+  void preprocessPoints(const sensor_msgs::PointCloud2ConstPtr& pc);
   void deskewPointcloud();
   void initializeInputTarget();
   void setInputSources();
@@ -55,7 +55,7 @@ private:
   void initializeDLO();
   void gravityAlign();
 
-  bool imuOptPreint();
+  void imuOptPreint(double end_time);
   void getNextPose();
   void imuPreintegration();
   void Optimize();
@@ -93,6 +93,8 @@ private:
   ros::Publisher kf_pub;
   ros::Publisher cur_cloud_t_pub, imu_odom_pub_;
 
+  ros::Timer publish_timer;
+
   Eigen::Vector3f origin;
   std::vector<std::pair<Eigen::Vector3f, Eigen::Quaternionf>> trajectory;
   std::vector<std::pair<std::pair<Eigen::Vector3f, Eigen::Quaternionf>, pcl::PointCloud<PointType>::Ptr>> keyframes;
@@ -114,7 +116,9 @@ private:
   bool deskew_status;
   bool first_valid_scan;
   bool deskew_;
-  
+  std::vector<std::pair<xio::NavState, double>> imu_states_;
+  long deskewNums, totalPointNums;
+
   double scan_median_stamp;
   double prev_scan_median_stamp;
 
@@ -190,8 +194,9 @@ private:
 
 
   // Sensor Type
-  // xio::SensorType sensor;
+  xio::SensorType sensor;
   //imu
+  ros::Time imu_stamp;
   ImuMeas imu_meas;
   std::vector<double> extRotV;
   std::vector<double> extRPYV;
@@ -207,6 +212,7 @@ private:
   double currentCorrectionTime;  //newest lidar odom time
   std::shared_ptr<xio::IMUPreintegration> imuPreinteg_ = nullptr, imuPreinteg_Opt_ = nullptr;
   //opt
+  bool imuOptInitialized = false;
   Eigen::Matrix<double, 15, 15> prior_info_ = Eigen::Matrix<double, 15, 15>::Identity();
   double lastImuT_opt;
   double delta_t = 0;
@@ -234,6 +240,7 @@ private:
   std::thread debug_thread;
 
   std::mutex mtx_imu;
+  std::condition_variable cv_imu_stamp;
 
   std::string cpu_type;
   std::vector<double> cpu_percents;

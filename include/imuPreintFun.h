@@ -40,6 +40,12 @@ namespace xio
             std::cout<<"time stamp:"<<time_stamp_<<std::endl;
         }
 
+        /**
+         * 返回Sophus::SE3d
+        */
+        Sophus::SE3d GetSE3() const {
+            return Sophus::SE3d(qwb.matrix(), Pwb);
+        }
         Eigen::Vector3d Pwb;    // position :    from  imu measurements
         Eigen::Quaterniond qwb; // quaterniond:  from imu measurements
         Eigen::Vector3d Vw;     // velocity  :   from imu measurements
@@ -226,32 +232,60 @@ namespace xio
             return state;
         }
     };
+    /**
+     * pose 插值算法
+     * @tparam T    数据类型
+     * @param query_time 查找时间
+     * @param data  数据
+     * @param take_pose_func 从数据中取pose的谓词
+     * @param result 查询结果
+     * @param best_match_iter 查找到的最近匹配
+     *
+     * NOTE 要求query_time必须在data最大时间和最小时间之间，不会外推
+     * data的map按时间排序
+     * @return 插值是否成功
+     */
+    template <typename T>
+    bool PoseInterp(double query_time, const std::vector<std::pair<T, double>>& data, const std::function<Sophus::SE3d(const T&)>& take_pose_func,
+                    Sophus::SE3d& result) {
+        if (data.empty()) {
+            std::cout << "data is empty";
+            return false;
+        }
+
+        if (query_time > data.rbegin()->second) {
+            // std::cout << "query time is later than last, " << std::setprecision(18) << ", query: " << query_time
+            //         << ", end time: " << data.rbegin()->second;
+            return false;
+        }
+        
+        auto match_iter = data.begin();
+        for (auto iter = data.begin(); iter != data.end(); ++iter) {
+            auto next_iter = iter;
+            next_iter++;
+
+            if (iter->second < query_time && next_iter->second >= query_time) {
+                match_iter = iter;
+                break;
+            }
+        }
+
+        auto match_iter_n = match_iter;
+        match_iter_n++;
+        assert(match_iter_n != data.end());
+
+        double dt = match_iter_n->second - match_iter->second;
+        double s = (query_time - match_iter->second) / dt;  // s=0 时为第一帧，s=1时为next
+
+        Sophus::SE3d pose_first = take_pose_func(match_iter->first);
+        Sophus::SE3d pose_next = take_pose_func(match_iter_n->first);
+        result = {pose_first.unit_quaternion().slerp(s, pose_next.unit_quaternion()),
+                pose_first.translation() * (1 - s) + pose_next.translation() * s};
+        // best_match = s < 0.5 ? match_iter->first : match_iter_n->first;
+        return true;
+    }
 }
-// namespace xio {
-//   enum class SensorType { OUSTER, VELODYNE, HESAI, UNKNOWN };
-
-//   struct Point {
-//     Point(): data{0.f, 0.f, 0.f, 1.f} {}
-
-//     PCL_ADD_POINT4D;
-//     float intensity; // intensity
-//     union {
-//       std::uint32_t t; // time since beginning of scan in nanoseconds
-//       float time; // time since beginning of scan in seconds
-//       double timestamp; // absolute timestamp in seconds
-//     };
-//     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-//   } EIGEN_ALIGN16;
-// }
-
-// POINT_CLOUD_REGISTER_POINT_STRUCT(xio::Point,
-//                                  (float, x, x)
-//                                  (float, y, y)
-//                                  (float, z, z)
-//                                  (float, intensity, intensity)
-//                                  (std::uint32_t, t, t)
-//                                  (float, time, time)
-//                                  (double, timestamp, timestamp))
-
-// typedef xio::Point PointType;
+namespace xio {
+    enum class SensorType { OUSTER, VELODYNE, HESAI, UNKNOWN };
+}
 #endif

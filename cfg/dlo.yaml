@@ -15,7 +15,8 @@ dlo:
 
   imu: true
   gravityAlign: false
-
+  deskew: true
+  
   odomNode:
     odom_frame: odom
     child_frame: base_link

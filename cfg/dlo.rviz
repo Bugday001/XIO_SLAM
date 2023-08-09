@@ -33,7 +33,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: Map
+    SyncSource: ""
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -368,10 +368,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.5097978115081787
+      Pitch: 0.3947979211807251
       Target Frame: robot/base_link
       Value: Orbit (rviz)
-      Yaw: 3.651282787322998
+      Yaw: 3.1112804412841797
     Saved: ~
 Window Geometry:
   Displays:

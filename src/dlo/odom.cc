@@ -38,6 +38,9 @@ dlo::OdomNode::OdomNode(ros::NodeHandle node_handle) : nh(node_handle) {
   this->keyframe_pub = this->nh.advertise<sensor_msgs::PointCloud2>("keyframe", 1, true);
   this->cur_cloud_t_pub = this->nh.advertise<sensor_msgs::PointCloud2>("cur_cloud_t", 1, true);
   this->imu_odom_pub_ = this->nh.advertise<nav_msgs::Odometry>("dio_imu_odom", 1, true);
+
+  this->publish_timer = this->nh.createTimer(ros::Duration(0.01), &dlo::OdomNode::publishPose, this);
+
   this->odom.pose.pose.position.x = 0.;
   this->odom.pose.pose.position.y = 0.;
   this->odom.pose.pose.position.z = 0.;
@@ -162,6 +165,7 @@ dlo::OdomNode::OdomNode(ros::NodeHandle node_handle) : nh(node_handle) {
   imuPreinteg_Opt_ = std::make_shared<xio::IMUPreintegration> ();
   imuType = 1;
   lastImuT_opt = -1;
+
   ROS_INFO("DLO Odom Node Initialized");
 }
 
@@ -260,6 +264,9 @@ void dlo::OdomNode::getParams() {
   extQRPY = Eigen::Quaterniond(extRPY).inverse();
   this->deskew_status = false;
   this->first_valid_scan = false;
+
+  ros::param::param<bool>("~dlo/deskew", this->deskew_, true);
+
 }
 
 
@@ -323,7 +330,6 @@ void dlo::OdomNode::abortTimerCB(const ros::TimerEvent& e) {
  **/
 
 void dlo::OdomNode::publishToROS() {
-  this->publishPose();
   this->publishTransform();
   this->publishCloud();
 }
@@ -367,47 +373,33 @@ void dlo::OdomNode::publishCloud() {
  * Publish Pose
  **/
 
-void dlo::OdomNode::publishPose() {
+void dlo::OdomNode::publishPose(const ros::TimerEvent& e) {
 
-  // Sign flip check
-  static Eigen::Quaternionf q_diff{1., 0., 0., 0.};
-  static Eigen::Quaternionf q_last{1., 0., 0., 0.};
+  this->odom.pose.pose.position.x = this->xioState.Pwb[0];
+  this->odom.pose.pose.position.y = this->xioState.Pwb[1];
+  this->odom.pose.pose.position.z = this->xioState.Pwb[2];
 
-  q_diff = q_last.conjugate()*this->rotq;
+  this->odom.pose.pose.orientation.w = this->xioState.qwb.w();
+  this->odom.pose.pose.orientation.x = this->xioState.qwb.x();
+  this->odom.pose.pose.orientation.y = this->xioState.qwb.y();
+  this->odom.pose.pose.orientation.z = this->xioState.qwb.z();
 
-  // If q_diff has negative real part then there was a sign flip
-  if (q_diff.w() < 0) {
-    this->rotq.w() = -this->rotq.w();
-    this->rotq.vec() = -this->rotq.vec();
-  }
-
-  q_last = this->rotq;
-
-  this->odom.pose.pose.position.x = this->lidarState.Pwb[0];
-  this->odom.pose.pose.position.y = this->lidarState.Pwb[1];
-  this->odom.pose.pose.position.z = this->lidarState.Pwb[2];
-
-  this->odom.pose.pose.orientation.w = this->lidarState.qwb.w();
-  this->odom.pose.pose.orientation.x = this->lidarState.qwb.x();
-  this->odom.pose.pose.orientation.y = this->lidarState.qwb.y();
-  this->odom.pose.pose.orientation.z = this->lidarState.qwb.z();
-
-  this->odom.header.stamp = this->scan_stamp;
+  this->odom.header.stamp = this->imu_stamp;
   this->odom.header.frame_id = this->odom_frame;
   this->odom.child_frame_id = this->child_frame;
   this->odom_pub.publish(this->odom);
 
-  this->pose_ros.header.stamp = this->scan_stamp;
+  this->pose_ros.header.stamp = this->imu_stamp;
   this->pose_ros.header.frame_id = this->odom_frame;
 
-  this->pose_ros.pose.position.x = this->lidarState.Pwb[0];
-  this->pose_ros.pose.position.y = this->lidarState.Pwb[1];
-  this->pose_ros.pose.position.z = this->lidarState.Pwb[2];
+  this->pose_ros.pose.position.x = this->xioState.Pwb[0];
+  this->pose_ros.pose.position.y = this->xioState.Pwb[1];
+  this->pose_ros.pose.position.z = this->xioState.Pwb[2];
 
-  this->pose_ros.pose.orientation.w = this->lidarState.qwb.w();
-  this->pose_ros.pose.orientation.x = this->lidarState.qwb.x();
-  this->pose_ros.pose.orientation.y = this->lidarState.qwb.y();
-  this->pose_ros.pose.orientation.z = this->lidarState.qwb.z();
+  this->pose_ros.pose.orientation.w = this->xioState.qwb.w();
+  this->pose_ros.pose.orientation.x = this->xioState.qwb.x();
+  this->pose_ros.pose.orientation.y = this->xioState.qwb.y();
+  this->pose_ros.pose.orientation.z = this->xioState.qwb.z();
 
   this->pose_pub.publish(this->pose_ros);
 }
@@ -478,7 +470,38 @@ void dlo::OdomNode::publishKeyframe() {
  * Preprocessing
  **/
 
-void dlo::OdomNode::preprocessPoints() {
+void dlo::OdomNode::preprocessPoints(const sensor_msgs::PointCloud2ConstPtr& pc) {
+
+    // If there are too few points in the pointcloud, try again
+  this->current_scan = pcl::PointCloud<PointType>::Ptr (new pcl::PointCloud<PointType>);
+  pcl::fromROSMsg(*pc, *this->current_scan);
+  // automatically detect sensor type
+  this->sensor = xio::SensorType::UNKNOWN;
+  for (auto &field : pc->fields) {
+    if (field.name == "t") {
+      this->sensor = xio::SensorType::OUSTER;
+      break;
+    } else if (field.name == "time") {
+      this->sensor = xio::SensorType::VELODYNE;
+      break;
+    } else if (field.name == "timestamp") {
+      this->sensor = xio::SensorType::HESAI;
+      break;
+    }
+  }
+
+  if (this->sensor == xio::SensorType::UNKNOWN) {
+    this->deskew_ = false;
+  }
+  *this->original_scan = *this->current_scan;
+
+  if(this->deskew_ ) {
+    this->deskewPointcloud();
+  }
+  else {
+    imuOptPreint(this->curr_frame_stamp);
+  }
+
   // Remove NaNs
   std::vector<int> idx;
   this->current_scan->is_dense = false;
@@ -489,22 +512,6 @@ void dlo::OdomNode::preprocessPoints() {
     this->crop.setInputCloud(this->current_scan);
     this->crop.filter(*this->current_scan);
   }
-
-  // if (this->sensor == xio::SensorType::UNKNOWN) {
-  //   this->deskew_ = false;
-  // }
-
-  // Original Scan
-  *this->original_scan = *this->current_scan;
-  // if (this->deskew_) {
-
-  //   this->deskewPointcloud();
-
-  //   if (!this->first_valid_scan) {
-  //     return;
-  //   }
-
-  // }
   // Voxel Grid Filter
   if (this->vf_scan_use_) {
     pcl::PointCloud<PointType>::Ptr current_scan_
@@ -519,132 +526,47 @@ void dlo::OdomNode::preprocessPoints() {
 
 }
 
-// void dlo::OdomNode::deskewPointcloud() {
+void dlo::OdomNode::deskewPointcloud() {
+  double sweep_ref_time = this->curr_frame_stamp;
+  //获取时间
+  std::function<double(PointType)> extract_point_time;
+  if (this->sensor == xio::SensorType::OUSTER) {
+    extract_point_time = [&sweep_ref_time](PointType pt)
+      { return sweep_ref_time + pt.t * 1e-9f; };
 
-//   pcl::PointCloud<PointType>::Ptr deskewed_scan_ (boost::make_shared<pcl::PointCloud<PointType>>());
-//   deskewed_scan_->points.resize(this->original_scan->points.size());
+  } else if (this->sensor == xio::SensorType::VELODYNE) {
+    extract_point_time = [&sweep_ref_time](PointType pt)
+      { return sweep_ref_time - pt.time; };
 
-//   // individual point timestamps should be relative to this time
-//   //基础时间
-//   double sweep_ref_time = this->scan_stamp.toSec();
+  } else if (this->sensor == xio::SensorType::HESAI) {
+    extract_point_time = [&sweep_ref_time](PointType pt)
+      { return pt.timestamp; };
+  }
+  this->totalPointNums = this->current_scan->size();
+  auto point = (*this->current_scan)[this->totalPointNums-1];
+  double end_time = extract_point_time(point);
 
-//   // sort points by timestamp and build list of timestamps
-//   //比较
-//   std::function<bool(const PointType&, const PointType&)> point_time_cmp;
-//   //不等于
-//   std::function<bool(boost::range::index_value<PointType&, long>,
-//                      boost::range::index_value<PointType&, long>)> point_time_neq;
-//   //获取时间
-//   std::function<double(boost::range::index_value<PointType&, long>)> extract_point_time;
-
-//   if (this->sensor == dlio::SensorType::OUSTER) {
-
-//     point_time_cmp = [](const PointType& p1, const PointType& p2)
-//       { return p1.t < p2.t; };
-//     point_time_neq = [](boost::range::index_value<PointType&, long> p1,
-//                         boost::range::index_value<PointType&, long> p2)
-//       { return p1.value().t != p2.value().t; };
-//     extract_point_time = [&sweep_ref_time](boost::range::index_value<PointType&, long> pt)
-//       { return sweep_ref_time + pt.value().t * 1e-9f; };
-
-//   } else if (this->sensor == dlio::SensorType::VELODYNE) {
-
-//     point_time_cmp = [](const PointType& p1, const PointType& p2)
-//       { return p1.time < p2.time; };
-//     point_time_neq = [](boost::range::index_value<PointType&, long> p1,
-//                         boost::range::index_value<PointType&, long> p2)
-//       { return p1.value().time != p2.value().time; };
-//     extract_point_time = [&sweep_ref_time](boost::range::index_value<PointType&, long> pt)
-//       { return sweep_ref_time + pt.value().time; };
-
-//   } else if (this->sensor == dlio::SensorType::HESAI) {
-
-//     point_time_cmp = [](const PointType& p1, const PointType& p2)
-//       { return p1.timestamp < p2.timestamp; };
-//     point_time_neq = [](boost::range::index_value<PointType&, long> p1,
-//                         boost::range::index_value<PointType&, long> p2)
-//       { return p1.value().timestamp != p2.value().timestamp; };
-//     extract_point_time = [&sweep_ref_time](boost::range::index_value<PointType&, long> pt)
-//       { return pt.value().timestamp; };
-
-//   }
-
-//   // copy points into deskewed_scan_ in order of timestamp
-//   std::partial_sort_copy(this->original_scan->points.begin(), this->original_scan->points.end(),
-//                          deskewed_scan_->points.begin(), deskewed_scan_->points.end(), point_time_cmp);
-
-//   // filter unique timestamps
-//   // 这个函数的作用是从deskewed_scan_点云数据中提取出时间戳不相同的点，并将它们存储在一个名为points_unique_timestamps的变量中。
-//   // 这个函数使用了Boost库中的adaptors，首先使用indexed()将点序号和点本身组合成一个pair，然后使用adjacent_filtered()过滤掉时间戳相邻的相同点，最终得到时间戳不相同的点
-//   auto points_unique_timestamps = deskewed_scan_->points
-//                                   | boost::adaptors::indexed()
-//                                   | boost::adaptors::adjacent_filtered(point_time_neq);
-
-//   // extract timestamps from points and put them in their own list
-//   std::vector<double> timestamps;
-//   std::vector<int> unique_time_indices;
-//   for (auto it = points_unique_timestamps.begin(); it != points_unique_timestamps.end(); it++) {
-//     timestamps.push_back(extract_point_time(*it));
-//     unique_time_indices.push_back(it->index());
-//   }
-//   unique_time_indices.push_back(deskewed_scan_->points.size());
-
-//   int median_pt_index = timestamps.size() / 2;
-//   this->scan_median_stamp = timestamps[median_pt_index]; // set this->scan_median_stamp to the timestamp of the median point，设置为中位点的时间戳
-
-//   // don't process scans until IMU data is present
-//   if (!this->first_valid_scan) {
-//     if (this->imu_buffer.empty() || this->scan_median_stamp <= this->imu_buffer.back().stamp) {
-//       return;
-//     }
-
-//     this->first_valid_scan = true;
-//     // this->T_prior = this->T; // assume no motion for the first scan，假设第一帧点云无运动畸变
-//     // pcl::transformPointCloud (*deskewed_scan_, *deskewed_scan_, this->T_prior * this->extrinsics.baselink2lidar_T);
-//     this->prev_scan_median_stamp = this->scan_median_stamp;
-//     this->deskewed_scan = deskewed_scan_;
-//     this->deskew_status = true;
-//     return;
-//   }
-
-//   // IMU prior & deskewing for second scan onwards
-//   std::vector<Eigen::Matrix4f, Eigen::aligned_allocator<Eigen::Matrix4f>> frames;
-//   frames = imuPreinteg_Opt_->integrateImu(this->prev_scan_median_stamp, this->lidarState.qwb.cast<float>(), this->lidarState.Pwb.cast<float>(),
-//                               this->lidarState.Vw.cast<float>(), timestamps);
-//   this->deskew_size = frames.size(); // if integration successful, equal to timestamps.size()
-//   this->prev_scan_median_stamp = this->scan_median_stamp;
-//   // if there are no frames between the start and end of the sweep
-//   // that probably means that there's a sync issue
-//   if (frames.size() != timestamps.size()) {
-//     ROS_FATAL("Bad time sync between LiDAR and IMU!");
-
-//     // this->T_prior = this->T;
-//     // pcl::transformPointCloud (*deskewed_scan_, *deskewed_scan_, this->T_prior * this->extrinsics.baselink2lidar_T);
-//     this->deskewed_scan = deskewed_scan_;
-//     this->deskew_status = false;
-//     return;
-//   }
-
-//   // update prior to be the estimated pose at the median time of the scan (corresponds to this->scan_stamp)
-//   // this->T_prior = frames[median_pt_index];
-
-// #pragma omp parallel for num_threads(this->num_threads_)
-//   for (int i = 0; i < timestamps.size(); i++) {
-
-//     Eigen::Matrix4f T = frames[i];// * this->extrinsics.baselink2lidar_T;
-
-//     // transform point to world frame
-//     for (int k = unique_time_indices[i]; k < unique_time_indices[i+1]; k++) {
-//       auto &pt = deskewed_scan_->points[k];
-//       pt.getVector4fMap()[3] = 1.;
-//       pt.getVector4fMap() = T * pt.getVector4fMap();
-//     }
-//   }
-
-//   this->deskewed_scan = deskewed_scan_;
-//   this->deskew_status = true;
-
-// }
+  //两帧之间imu积分
+  imuOptPreint(end_time);
+  if(imuOptInitialized == false || imu_states_.empty()) {
+    return;
+  }
+  this->deskewNums = 0;
+  xio::NavState last_imu = imu_states_.back().first;
+  Sophus::SE3d T_end(last_imu.qwb, last_imu.Pwb);
+  for (auto& point: *this->current_scan) {
+      Sophus::SE3d Ti = T_end;
+      bool success = xio::PoseInterp<xio::NavState>(
+          extract_point_time(point), imu_states_,
+          [](const xio::NavState &s) { return s.GetSE3(); }, Ti);
+      if(success) this->deskewNums++;
+      Eigen::Vector3d pi = Eigen::Vector3d(point.x, point.y, point.z);
+      Eigen::Vector3d p_compensate = T_end.inverse() * Ti * pi;
+      point.x = p_compensate(0);
+      point.y = p_compensate(1);
+      point.z = p_compensate(2);
+  }
+}
 
 
 /**
@@ -832,36 +754,19 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
   double then = ros::Time::now().toSec();
   this->scan_stamp = pc->header.stamp;
   this->curr_frame_stamp = pc->header.stamp.toSec();
-  // If there are too few points in the pointcloud, try again
-  this->current_scan = pcl::PointCloud<PointType>::Ptr (new pcl::PointCloud<PointType>);
-  pcl::fromROSMsg(*pc, *this->current_scan);
-  // automatically detect sensor type
-  // this->sensor = xio::SensorType::UNKNOWN;
-  // for (auto &field : pc->fields) {
-  //   if (field.name == "t") {
-  //     this->sensor = xio::SensorType::OUSTER;
-  //     break;
-  //   } else if (field.name == "time") {
-  //     this->sensor = xio::SensorType::VELODYNE;
-  //     break;
-  //   } else if (field.name == "timestamp") {
-  //     this->sensor = xio::SensorType::HESAI;
-  //     break;
-  //   }
-  // }
-  if (this->current_scan->points.size() < this->gicp_min_num_points_) {
-    ROS_WARN("Low number of points!");
-    return;
-  }
 
   // DLO Initialization procedures (IMU calib, gravity align)
   if (!this->dlo_initialized) {
     this->initializeDLO();
     return;
   }
-  // Preprocess points
-  this->preprocessPoints();
 
+  // Preprocess points Deskews
+  this->preprocessPoints(pc);
+  if (this->current_scan->points.size() < this->gicp_min_num_points_) {
+    ROS_WARN("Low number of points!");
+    return;
+  }
   // Compute Metrics
   this->metrics_thread = std::thread( &dlo::OdomNode::computeMetrics, this );
   this->metrics_thread.detach();
@@ -879,9 +784,7 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
     this->initializeInputTarget();
     return;
   }
-  this->mtx_imu.lock();
-  bool imuOptInit =imuOptPreint();
-  this->mtx_imu.unlock();
+  
   this->comp_times.push_back(ros::Time::now().toSec() - then);
   // Get the next pose via IMU + S2M
   this->getNextPose();
@@ -894,10 +797,8 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
   this->comp_times.push_back(ros::Time::now().toSec() - then);
 
   // imu 积分
-  if(imuOptInit) {
-    this->mtx_imu.lock();
+  if(imuOptInitialized) {
     imuPreintegration();
-    this->mtx_imu.unlock();
   }
   this->comp_times.push_back(ros::Time::now().toSec() - then);
   //Update next point
@@ -919,17 +820,16 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
  * 对两帧之间的imu进行积分
  * return 是否初始化了
 */
-bool dlo::OdomNode::imuOptPreint() 
+void dlo::OdomNode::imuOptPreint(double end_time) 
 {
     //为优化的imu进行积分
   // 0. initialize system
-  static bool systemInitialized = false;
-  if (systemInitialized == false)
+  if (imuOptInitialized == false)
   {
     // pop old IMU message
     while (!imuQueOpt.empty())
     {
-        if (imuQueOpt.front().header.stamp.toSec() < this->curr_frame_stamp - delta_t)
+        if (imuQueOpt.front().header.stamp.toSec() < end_time - delta_t)
         {
             lastImuT_opt = imuQueOpt.front().header.stamp.toSec();
             imuQueOpt.pop_front();
@@ -937,28 +837,37 @@ bool dlo::OdomNode::imuOptPreint()
         else
             break;
     }
-    systemInitialized = true;
-    return false;
+    imuOptInitialized = true;
+    return;
+    // return false;
   }
+  if (this->imuQueOpt.empty() || imuQueOpt.front().header.stamp.toSec() < end_time) {
+    // Wait for the latest IMU data
+    //使用 std::unique_lock(通过 std::mutex) 来锁住当前线程
+    std::unique_lock<decltype(this->mtx_imu)> lock(this->mtx_imu);
+    this->cv_imu_stamp.wait(lock, [this, &end_time]{ return imuQueOpt.back().header.stamp.toSec() >= end_time; });
+  }
+  imu_states_.clear();
   // 1. integrate imu data and optimize
   while (!imuQueOpt.empty())
   {
       // pop and integrate imu data that is between two optimizations
       sensor_msgs::Imu *thisImu = &imuQueOpt.front();
       double imuTime = imuQueOpt.front().header.stamp.toSec();
-      if (imuTime < this->curr_frame_stamp - delta_t)
+      if (imuTime < end_time - delta_t)
       {
           double dt = (lastImuT_opt < 0) ? (1.0 / 500.0) : (imuTime - lastImuT_opt);
           Eigen::Vector3d gyro(thisImu->angular_velocity.x, thisImu->angular_velocity.y, thisImu->angular_velocity.z);
           Eigen::Vector3d acc(thisImu->linear_acceleration.x, thisImu->linear_acceleration.y, thisImu->linear_acceleration.z);
           imuPreinteg_Opt_->imuPropagate(gyro, acc, dt);
+          imu_states_.push_back({imuPreinteg_Opt_->Predict(this->lidarState), imuTime});
           lastImuT_opt = imuTime;
           imuQueOpt.pop_front();
       }
       else
           break;
   }
-  return true;
+  // return true;
 }
 
 
@@ -1024,6 +933,7 @@ void dlo::OdomNode::imuCB(const sensor_msgs::Imu::ConstPtr& imu) {
   }
 
   sensor_msgs::Imu thisImu = imuConverter(*imu);
+  this->imu_stamp = thisImu.header.stamp;
 
   double ang_vel[3], lin_accel[3];
 
@@ -1099,6 +1009,7 @@ void dlo::OdomNode::imuCB(const sensor_msgs::Imu::ConstPtr& imu) {
     lastImuT_imu = imuTime;
     publishImuOdom();
     this->mtx_imu.unlock();
+    this->cv_imu_stamp.notify_one();
   }
 
 }
@@ -1784,6 +1695,7 @@ void dlo::OdomNode::debug() {
   int vecsize = comp_times.size();
   std::cout << "Whole computation Time :: " << std::setfill(' ') << std::setw(6) << this->comp_times[vecsize-1]*1000. << " ms    // Avg: " << std::setw(5) << avg_comp_time*1000. << std::endl;
   std::cout << "integ+gicp Computation Time :: " << std::setfill(' ') << std::setw(6) << this->comp_times[vecsize-2]*1000. << " ms    // integ: " << std::setw(5) << this->comp_times[vecsize-3]*1000. << std::endl;
+  std::cout<< "deskew?: " << this->deskew_ <<", total size: "<<this->totalPointNums<<"deskew size: "<<this->deskewNums<<"percentage"<<(double)this->deskewNums/this->totalPointNums<< std::endl;
   std::cout << "Cores Utilized   :: " << std::setfill(' ') << std::setw(6) << (cpu_percent/100.) * this->numProcessors << " cores // Avg: " << std::setw(5) << (avg_cpu_usage/100.) * this->numProcessors << std::endl;
   std::cout << "CPU Load         :: " << std::setfill(' ') << std::setw(6) << cpu_percent << " %     // Avg: " << std::setw(5) << avg_cpu_usage << std::endl;
   std::cout << "RAM Allocation   :: " << std::setfill(' ') << std::setw(6) << resident_set/1000. << " MB    // VSZ: " << vm_usage/1000. << " MB" << std::endl;
