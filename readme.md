@@ -15,3 +15,6 @@
 - [ ] 点云去畸变。
     - [X] imu时间戳与雷达对齐,避免部分点云无法去畸变.
     - [ ] 对齐时间戳后出现抖动，怀疑是由于修改了积分的时间段，将原本积分到header.stamp的修改到积分到最后一个点云点的时间戳，积分时间不变还是0.1s.
+
+## Acknowledgement
+[DLO & DLIO](https://github.com/vectr-ucla)
