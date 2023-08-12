@@ -37,6 +37,7 @@ dlo::OdomNode::OdomNode(ros::NodeHandle node_handle) : nh(node_handle) {
   this->kf_pub = this->nh.advertise<nav_msgs::Odometry>("kfs", 1, true);
   this->keyframe_pub = this->nh.advertise<sensor_msgs::PointCloud2>("keyframe", 1, true);
   this->cur_cloud_t_pub = this->nh.advertise<sensor_msgs::PointCloud2>("cur_cloud_t", 1, true);
+  this->deskewed_cloud_pub = this->nh.advertise<sensor_msgs::PointCloud2>("deskewed_cloud", 1, true);
   this->imu_odom_pub_ = this->nh.advertise<nav_msgs::Odometry>("dio_imu_odom", 1, true);
 
   this->publish_timer = this->nh.createTimer(ros::Duration(0.01), &dlo::OdomNode::publishPose, this);
@@ -367,6 +368,19 @@ void dlo::OdomNode::publishCloud() {
   cur_cloud_t_ros.header.stamp = this->scan_stamp;
   cur_cloud_t_ros.header.frame_id = this->odom_frame;
   this->cur_cloud_t_pub.publish(cur_cloud_t_ros);
+
+  //deskew
+  sensor_msgs::PointCloud2 cur_cloud_deskewed;
+  pcl::PointCloud<PointType>::Ptr deskewed_scan_t_ (boost::make_shared<pcl::PointCloud<PointType>>());
+  Eigen::Matrix4d T_cloud = Eigen::Matrix4d::Identity();
+  T_cloud.block<3,3>(0,0) = this->lidarState.qwb.matrix();
+  T_cloud.block<3,1>(0,3) = this->lidarState.Pwb;
+  
+  pcl::transformPointCloud (*this->original_scan, *deskewed_scan_t_, T_cloud);
+  pcl::toROSMsg(*deskewed_scan_t_, cur_cloud_deskewed);
+  cur_cloud_deskewed.header.stamp = this->scan_stamp;
+  cur_cloud_deskewed.header.frame_id = this->odom_frame;
+  this->deskewed_cloud_pub.publish(cur_cloud_deskewed);
 }
 
 /**
@@ -498,8 +512,6 @@ void dlo::OdomNode::preprocessPoints(const sensor_msgs::PointCloud2ConstPtr& pc)
   this->current_scan->is_dense = false;
   pcl::removeNaNFromPointCloud(*this->current_scan, *this->current_scan, idx);
 
-  *this->original_scan = *this->current_scan;
-
   if(this->deskew_ ) {
     this->deskewPointcloud();
   }
@@ -507,7 +519,7 @@ void dlo::OdomNode::preprocessPoints(const sensor_msgs::PointCloud2ConstPtr& pc)
     this->curr_frame_end_time = this->curr_frame_stamp;
     imuOptPreint();
   }
-
+  *this->original_scan = *this->current_scan;
   // Crop Box Filter
   if (this->crop_use_) {
     this->crop.setInputCloud(this->current_scan);
@@ -544,13 +556,13 @@ void dlo::OdomNode::deskewPointcloud() {
       { return pt.timestamp; };
   }
   this->totalPointNums = this->current_scan->size();
-  auto point = (*this->current_scan)[0];
-  this->curr_frame_end_time = extract_point_time(point);
+  auto point0 = (*this->current_scan)[0];
+  auto pointEnd = (*this->current_scan)[this->totalPointNums-1];
+  this->curr_frame_end_time = std::max(extract_point_time(point0), extract_point_time(pointEnd));
 
   //两帧之间imu积分
   imuOptPreint();
   if(imuOptInitialized == false || imu_states_.empty()) {
-    // std::cout<<"empty"<<std::endl;
     return;
   }
   this->deskewNums = 0;
@@ -814,7 +826,7 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
   this->preLidarState = this->lidarState;
   // Publish stuff to ROS
   this->publish_thread = std::thread( &dlo::OdomNode::publishToROS, this );
-  this->publish_thread.detach();
+  this->publish_thread.detach();  //线程同时分别运行同时执行pub和debug。若使用join则是顺序执行，先执行完pub，才进入debug。
 
   // Debug statements and publish custom DLO message
   this->debug_thread = std::thread( &dlo::OdomNode::debug, this );

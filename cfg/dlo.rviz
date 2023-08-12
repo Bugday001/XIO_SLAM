@@ -5,13 +5,13 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
+        - /LiDAR1
         - /Odometry1/Shape1
         - /Keyframes1/Shape1
         - /Map1/Autocompute Value Bounds1
-        - /Path1
         - /imu1/Shape1
-        - /Path2
         - /Odometry2/Shape1
+        - /deskewed1
       Splitter Ratio: 0.3785558044910431
     Tree Height: 841
   - Class: rviz/Selection
@@ -68,7 +68,7 @@ Visualization Manager:
       Channel Name: intensity
       Class: rviz/PointCloud2
       Color: 255; 255; 255
-      Color Transformer: Intensity
+      Color Transformer: FlatColor
       Decay Time: 0
       Enabled: true
       Invert Rainbow: false
@@ -81,7 +81,7 @@ Visualization Manager:
       Size (Pixels): 2
       Size (m): 0.009999999776482582
       Style: Points
-      Topic: /robot/lidar
+      Topic: /robot/dlio/odom_node/pointcloud/deskewed
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
@@ -305,21 +305,21 @@ Visualization Manager:
       Axis: Z
       Channel Name: intensity
       Class: rviz/PointCloud2
-      Color: 255; 255; 255
-      Color Transformer: Intensity
-      Decay Time: 99
+      Color: 239; 41; 41
+      Color Transformer: FlatColor
+      Decay Time: 1
       Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
       Min Color: 0; 0; 0
-      Name: PointCloud2
+      Name: deskewed
       Position Transformer: XYZ
       Queue Size: 10
       Selectable: true
       Size (Pixels): 3
-      Size (m): 0.019999999552965164
-      Style: Squares
-      Topic: /points_raw
+      Size (m): 0.009999999776482582
+      Style: Flat Squares
+      Topic: /robot/xio_odom/deskewed_cloud
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
@@ -352,25 +352,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 6.952622890472412
+      Distance: 13.489042282104492
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -12.596205711364746
-        Y: -8.492010116577148
-        Z: 14.660093307495117
+        X: -0.1855810582637787
+        Y: 1.0048421621322632
+        Z: 15.182989120483398
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.5547977685928345
+      Pitch: 1.3497973680496216
       Target Frame: robot/base_link
       Value: Orbit (rviz)
-      Yaw: 3.5062835216522217
+      Yaw: 3.061279535293579
     Saved: ~
 Window Geometry:
   Displays:

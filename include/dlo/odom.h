@@ -91,8 +91,10 @@ private:
   ros::Publisher pose_pub;
   ros::Publisher keyframe_pub;
   ros::Publisher kf_pub;
-  ros::Publisher cur_cloud_t_pub, imu_odom_pub_;
-
+  ros::Publisher cur_cloud_t_pub;
+  ros::Publisher deskewed_cloud_pub;
+  ros::Publisher imu_odom_pub_;
+  
   ros::Timer publish_timer;
 
   Eigen::Vector3f origin;

@@ -17,11 +17,11 @@
   <arg name="imu_topic" default="/mavros/imu/data"/> -->
   <!-- <arg name="pointcloud_topic" default="/rslidar_points"/>
   <arg name="imu_topic" default="/imu/data"/> -->
-  <arg name="pointcloud_topic" default="/points_raw"/>
-  <arg name="imu_topic" default="/imu_raw"/>
+  <!-- <arg name="pointcloud_topic" default="/points_raw"/>
+  <arg name="imu_topic" default="/imu_raw"/> -->
 
-  <!-- <arg name="pointcloud_topic" default="/robot/lidar"/>
-  <arg name="imu_topic" default="/robot/imu"/> -->
+  <arg name="pointcloud_topic" default="/robot/lidar"/>
+  <arg name="imu_topic" default="/robot/imu"/>
 
   <!-- DLO Odometry Node -->
   <node ns="$(arg robot_namespace)" name="xio_odom" pkg="xio" type="dlo_odom_node" output="screen" clear_params="true">
@@ -39,7 +39,6 @@
     <remap from="~pose" to="dlo/odom_node/pose"/>
     <remap from="~kfs" to="dlo/odom_node/odom/keyframe"/>
     <remap from="~keyframe" to="dlo/odom_node/pointcloud/keyframe"/>
-
   </node>
 
   <!-- DLO Mapping Node -->
