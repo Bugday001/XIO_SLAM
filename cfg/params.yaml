@@ -30,7 +30,7 @@ dlo:
       voxelFilter:
         scan:
           use: true
-          res: 0.25
+          res: 0.1
         submap:
           use: false
           res: 0.25
@@ -49,18 +49,18 @@ dlo:
       calibTime: 3
       bufferSize: 2000
       extrinsicTrans: [0.0, 0.0, 0.0]
-      # extrinsicRot: [-1, 0, 0,
-      #                 0, 1, 0,
-      #                 0, 0, -1]
-      # extrinsicRPY: [0,  1, 0,
-      #                -1, 0, 0,
-      #                 0, 0, 1]
-      extrinsicRot: [1, 0, 0,
-                  0, 1, 0,
-                  0, 0, 1]
-      extrinsicRPY: [1, 0, 0,
-                  0, 1, 0,
-                  0, 0, 1]
+      extrinsicRot: [-1, 0, 0,
+                      0, 1, 0,
+                      0, 0, -1]
+      extrinsicRPY: [0,  1, 0,
+                     -1, 0, 0,
+                      0, 0, 1]
+      # extrinsicRot: [1, 0, 0,
+      #             0, 1, 0,
+      #             0, 0, 1]
+      # extrinsicRPY: [1, 0, 0,
+      #             0, 1, 0,
+      #             0, 0, 1]
     gicp:
       minNumPoints: 64
       s2m:

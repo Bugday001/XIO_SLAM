@@ -47,6 +47,7 @@
 #include <pcl_ros/point_cloud.h>
 #include <pcl_ros/transforms.h>
 #include <pcl/cloud_iterator.h>
+#include <pcl/filters/extract_indices.h>
 
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/Point.h>

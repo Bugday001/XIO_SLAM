@@ -26,11 +26,10 @@ dlo::OdomNode::OdomNode(ros::NodeHandle node_handle) : nh(node_handle) {
   this->stop_debug_thread = false;
 
   this->dlo_initialized = false;
-  this->imu_calibrated = false;  //bugday 数据集不含标定时间，跳过该步骤
+  this->imu_calibrated = false;  
 
   this->icp_sub = this->nh.subscribe("pointcloud", 1, &dlo::OdomNode::icpCB, this);
-  this->imu_sub = this->nh.subscribe("imu", 1, &dlo::OdomNode::imuCB, this);
-  this->gt_sub = nh.subscribe<nav_msgs::Odometry>("/ground_truth/state", 100, &dlo::OdomNode::gtCB, this); 
+  this->imu_sub = this->nh.subscribe("imu", 1000, &dlo::OdomNode::imuCB, this);
   
   this->odom_pub = this->nh.advertise<nav_msgs::Odometry>("odom", 1);
   this->pose_pub = this->nh.advertise<geometry_msgs::PoseStamped>("pose", 1);
@@ -511,7 +510,7 @@ void dlo::OdomNode::preprocessPoints(const sensor_msgs::PointCloud2ConstPtr& pc)
   std::vector<int> idx;
   this->current_scan->is_dense = false;
   pcl::removeNaNFromPointCloud(*this->current_scan, *this->current_scan, idx);
-
+  *this->original_scan = *this->current_scan;
   if(this->deskew_ ) {
     this->deskewPointcloud();
   }
@@ -519,7 +518,7 @@ void dlo::OdomNode::preprocessPoints(const sensor_msgs::PointCloud2ConstPtr& pc)
     this->curr_frame_end_time = this->curr_frame_stamp;
     imuOptPreint();
   }
-  *this->original_scan = *this->current_scan;
+
   // Crop Box Filter
   if (this->crop_use_) {
     this->crop.setInputCloud(this->current_scan);
@@ -543,23 +542,50 @@ void dlo::OdomNode::deskewPointcloud() {
   double sweep_ref_time = this->curr_frame_stamp;
   //获取时间
   std::function<double(PointType)> extract_point_time;
+  std::function<bool(const PointType&, const PointType&)> point_time_cmp;
+
   if (this->sensor == xio::SensorType::OUSTER) {
     extract_point_time = [&sweep_ref_time](PointType pt)
       { return sweep_ref_time + pt.t * 1e-9f; };
+    point_time_cmp = [](const PointType& p1, const PointType& p2)
+      { return p1.t < p2.t; };
 
   } else if (this->sensor == xio::SensorType::VELODYNE) {
+    point_time_cmp = [](const PointType& p1, const PointType& p2)
+      { return p1.time < p2.time; };
     extract_point_time = [&sweep_ref_time](PointType pt)
-      { return sweep_ref_time - pt.time; };
+      { return sweep_ref_time + pt.time; };
 
   } else if (this->sensor == xio::SensorType::HESAI) {
+    point_time_cmp = [](const PointType& p1, const PointType& p2)
+      { return p1.timestamp < p2.timestamp; };
     extract_point_time = [&sweep_ref_time](PointType pt)
       { return pt.timestamp; };
   }
-  this->totalPointNums = this->current_scan->size();
-  auto point0 = (*this->current_scan)[0];
-  auto pointEnd = (*this->current_scan)[this->totalPointNums-1];
-  this->curr_frame_end_time = std::max(extract_point_time(point0), extract_point_time(pointEnd));
-
+  pcl::PointCloud<PointType>::Ptr deskewed_scan_ (boost::make_shared<pcl::PointCloud<PointType>>());
+  deskewed_scan_->points.resize(this->original_scan->points.size());
+  std::partial_sort_copy(this->original_scan->points.begin(), this->original_scan->points.end(),
+                        deskewed_scan_->points.begin(), deskewed_scan_->points.end(), point_time_cmp);
+  double lastTimeStamp = -1;
+  pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
+  pcl::ExtractIndices<PointType> extract;
+  for (int i = 0; i < (*deskewed_scan_).size(); i++)
+  {
+    double currTime = extract_point_time(deskewed_scan_->points[i]);
+    if(currTime-lastTimeStamp<1e-7) {
+      inliers->indices.push_back(i);
+    }
+    else {
+      lastTimeStamp = currTime;
+    }
+  }
+  extract.setInputCloud(deskewed_scan_);
+  extract.setIndices(inliers);
+  extract.setNegative(true);
+  extract.filter(*deskewed_scan_);
+  this->totalPointNums = deskewed_scan_->size();
+  auto pointEnd = (*deskewed_scan_)[this->totalPointNums-1];
+  this->curr_frame_end_time = extract_point_time(pointEnd);
   //两帧之间imu积分
   imuOptPreint();
   if(imuOptInitialized == false || imu_states_.empty()) {
@@ -568,7 +594,7 @@ void dlo::OdomNode::deskewPointcloud() {
   this->deskewNums = 0;
   xio::NavState last_imu = imu_states_.back().first;
   Sophus::SE3d T_end(last_imu.qwb, last_imu.Pwb);
-  for (auto& point: *this->current_scan) {
+  for (auto& point: *deskewed_scan_) {
       Sophus::SE3d Ti = T_end;
       bool success = xio::PoseInterp<xio::NavState>(
           extract_point_time(point), imu_states_,
@@ -580,6 +606,7 @@ void dlo::OdomNode::deskewPointcloud() {
       point.y = p_compensate(1);
       point.z = p_compensate(2);
   }
+  *this->current_scan = *deskewed_scan_;
   // std::cout<<std::setprecision(18)<<this->curr_frame_end_time<<std::endl;
 }
 
@@ -618,7 +645,6 @@ void dlo::OdomNode::initializeInputTarget() {
 /**
  * Set Input Sources
  **/
-
 void dlo::OdomNode::setInputSources(){
   this->gicp.setInputSource(this->current_scan);
   this->gicp.calculateSourceCovariances();
@@ -817,6 +843,8 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
     imuPreintegration();
     this->mtx_imu.unlock();
   }
+
+
   this->comp_times.push_back(ros::Time::now().toSec() - then);
   //Update next point
   this->prev_point_ = this->pose.cast<double>();
@@ -932,18 +960,8 @@ void dlo::OdomNode::imuPreintegration() {
 
 
 /**
- * ground truth Callback
-*/
-void dlo::OdomNode::gtCB(const nav_msgs::OdometryConstPtr &PointRes)
-{
-	this->uwbPoint = PointRes->pose.pose.position;
-}
-
-
-/**
  * IMU Callback
  **/
-
 void dlo::OdomNode::imuCB(const sensor_msgs::Imu::ConstPtr& imu) {
 
   if (!this->imu_use_) {
@@ -1025,7 +1043,7 @@ void dlo::OdomNode::imuCB(const sensor_msgs::Imu::ConstPtr& imu) {
     xioState = imuPreinteg_->Predict(lidarState);
     xioState.time_stamp_ = imuTime;
     lastImuT_imu = imuTime;
-    publishImuOdom();
+    // publishImuOdom();
     this->mtx_imu.unlock();
     this->cv_imu_stamp.notify_one();
   }
@@ -1151,6 +1169,7 @@ void dlo::OdomNode::Optimize() {
   this->lidarState.Vw = v1_vel->estimate();
   this->lidarState.bg_ = v1_bg->estimate();
   this->lidarState.ba_ = v1_ba->estimate();
+  this->integDt = this->imuPreinteg_Opt_->dt_;
   if(this->debugVerbose) {
     std::cout<<"after g2o: "<<std::endl;
     this->lidarState.print();
@@ -1219,7 +1238,6 @@ void dlo::OdomNode::getNextPose() {
 
     // Set the current global submap as the target cloud
     this->gicp.setInputTarget(this->submap_cloud);
-
     // Set target cloud's normals as submap normals
     this->gicp.setTargetCovariances( this->submap_normals );
   }
@@ -1703,9 +1721,12 @@ void dlo::OdomNode::debug() {
   if (!this->cpu_type.empty()) {
     std::cout << std::endl << this->cpu_type << " x " << this->numProcessors << std::endl;
   }
-
+  Eigen::Vector3f imuPositon = this->T_s2s.block<3,1>(0,3);
+  Eigen::Quaternionf imuOri = Eigen::Quaternionf(this->T_s2s.block<3,3>(0,0));
   std::cout << std::endl << std::setprecision(4) << std::fixed;
+  std::cout << "imu Position    [xyz]  :: " << imuPositon[0] << " " << imuPositon[1] << " " << imuPositon[2] << std::endl;
   std::cout << "Position    [xyz]  :: " << this->pose[0] << " " << this->pose[1] << " " << this->pose[2] << std::endl;
+  std::cout << "imu Orientation [wxyz] :: " << imuOri.w() << " " << imuOri.x() << " " << imuOri.y() << " " << imuOri.z() << std::endl;
   std::cout << "Orientation [wxyz] :: " << this->rotq.w() << " " << this->rotq.x() << " " << this->rotq.y() << " " << this->rotq.z() << std::endl;
   std::cout << "Distance Traveled  :: " << length_traversed << " meters" << std::endl;
   std::cout << "Distance to Origin :: " << sqrt(pow(this->pose[0]-this->origin[0],2) + pow(this->pose[1]-this->origin[1],2) + pow(this->pose[2]-this->origin[2],2)) << " meters" << std::endl;
@@ -1714,7 +1735,8 @@ void dlo::OdomNode::debug() {
   int vecsize = comp_times.size();
   std::cout << "Whole computation Time :: " << std::setfill(' ') << std::setw(6) << this->comp_times[vecsize-1]*1000. << " ms    // Avg: " << std::setw(5) << avg_comp_time*1000. << std::endl;
   std::cout << "integ+gicp Computation Time :: " << std::setfill(' ') << std::setw(6) << this->comp_times[vecsize-2]*1000. << " ms    // integ: " << std::setw(5) << this->comp_times[vecsize-3]*1000. << std::endl;
-  std::cout<< "deskew?: " << this->deskew_ <<", total size: "<<this->totalPointNums<<"deskew size: "<<this->deskewNums<<"percentage"<<(double)this->deskewNums/this->totalPointNums<< std::endl;
+  std::cout<< "deskew ?: " << this->deskew_ <<", total size: "<<this->totalPointNums<<"deskew size: "<<this->deskewNums<<"percentage"<<(double)this->deskewNums/this->totalPointNums<< std::endl;
+  std::cout<<"preintegration dt: "<<std::setfill(' ') << std::setw(6) << this->integDt << std::endl;
   std::cout << "Cores Utilized   :: " << std::setfill(' ') << std::setw(6) << (cpu_percent/100.) * this->numProcessors << " cores // Avg: " << std::setw(5) << (avg_cpu_usage/100.) * this->numProcessors << std::endl;
   std::cout << "CPU Load         :: " << std::setfill(' ') << std::setw(6) << cpu_percent << " %     // Avg: " << std::setw(5) << avg_cpu_usage << std::endl;
   std::cout << "RAM Allocation   :: " << std::setfill(' ') << std::setw(6) << resident_set/1000. << " MB    // VSZ: " << vm_usage/1000. << " MB" << std::endl;

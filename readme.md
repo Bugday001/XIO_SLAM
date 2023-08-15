@@ -1,5 +1,11 @@
 # IMU预积分
-为dlo添加自己的预积分部分，后加以紧耦合。
+
+为dlo添加自己的预积分部分，后加以紧耦合，去畸变。
+
+lio-sam walking dataset:
+<p align="center">
+    <img src="./doc/imgs/xio_walk.png" alt="drawing" width="720"/>
+</p>
 
 ## finished
 - [X] 使用优化器耦合imu和lidar的odom
@@ -9,7 +15,6 @@
 - [X] 解决imu的odom抖动问题，imu预积分效果不好。
     - [X] 在预积分reset部分添加了之前遗漏的参数。速度限制作用明显下降。
 ## TO DO
-- [ ] 似乎gicp匹配对于室外花花草草效果不佳，尝试增大点云密度。
 - [ ] 提升稳定性。
 - [ ] 解决优化结果bg_, ba_都是0.0的问题。
 - [ ] 点云去畸变。

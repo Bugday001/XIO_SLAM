@@ -5,13 +5,7 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
-        - /LiDAR1
-        - /Odometry1/Shape1
-        - /Keyframes1/Shape1
-        - /Map1/Autocompute Value Bounds1
-        - /imu1/Shape1
-        - /Odometry2/Shape1
-        - /deskewed1
+        - /Path1
       Splitter Ratio: 0.3785558044910431
     Tree Height: 841
   - Class: rviz/Selection
@@ -32,7 +26,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: Map
+    SyncSource: deskewed
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -58,272 +52,284 @@ Visualization Manager:
       Plane Cell Count: 1000
       Reference Frame: robot/odom
       Value: true
-    - Alpha: 1
-      Autocompute Intensity Bounds: true
-      Autocompute Value Bounds:
-        Max Value: 6.261447906494141
-        Min Value: -0.6103848814964294
-        Value: true
-      Axis: Z
-      Channel Name: intensity
-      Class: rviz/PointCloud2
-      Color: 255; 255; 255
-      Color Transformer: FlatColor
-      Decay Time: 0
-      Enabled: true
-      Invert Rainbow: false
-      Max Color: 255; 255; 255
-      Min Color: 0; 0; 0
-      Name: LiDAR
-      Position Transformer: XYZ
-      Queue Size: 10
-      Selectable: true
-      Size (Pixels): 2
-      Size (m): 0.009999999776482582
-      Style: Points
-      Topic: /robot/dlio/odom_node/pointcloud/deskewed
-      Unreliable: false
-      Use Fixed Frame: true
-      Use rainbow: true
-      Value: true
-    - Angle Tolerance: 0.009999999776482582
-      Class: rviz/Odometry
-      Covariance:
-        Orientation:
-          Alpha: 0.5
-          Color: 255; 255; 127
-          Color Style: Unique
-          Frame: Local
-          Offset: 1
-          Scale: 1
+    - Class: rviz/Group
+      Displays:
+        - Alpha: 0.10000000149011612
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 10
+            Min Value: -10
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz/PointCloud2
+          Color: 239; 41; 41
+          Color Transformer: FlatColor
+          Decay Time: 0
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Min Color: 0; 0; 0
+          Name: deskewed
+          Position Transformer: XYZ
+          Queue Size: 10
+          Selectable: true
+          Size (Pixels): 1
+          Size (m): 0.009999999776482582
+          Style: Points
+          Topic: /robot/xio_odom/deskewed_cloud
+          Unreliable: false
+          Use Fixed Frame: true
+          Use rainbow: true
           Value: true
-        Position:
-          Alpha: 0.30000001192092896
-          Color: 204; 51; 204
-          Scale: 1
+        - Alpha: 1
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 6
+            Min Value: 0
+            Value: false
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz/PointCloud2
+          Color: 0; 0; 128
+          Color Transformer: AxisColor
+          Decay Time: 0
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Min Color: 0; 0; 0
+          Name: Map
+          Position Transformer: XYZ
+          Queue Size: 1000
+          Selectable: true
+          Size (Pixels): 1
+          Size (m): 0.05000000074505806
+          Style: Points
+          Topic: /robot/dlo/map_node/map
+          Unreliable: false
+          Use Fixed Frame: true
+          Use rainbow: true
           Value: true
-        Value: false
-      Enabled: true
-      Keep: 1
-      Name: Odometry
-      Position Tolerance: 0.009999999776482582
-      Shape:
-        Alpha: 1
-        Axes Length: 1
-        Axes Radius: 0.25
-        Color: 255; 25; 0
-        Head Length: 0.30000001192092896
-        Head Radius: 0.10000000149011612
-        Shaft Length: 1
-        Shaft Radius: 0.05000000074505806
-        Value: Axes
-      Topic: /robot/dlo/odom_node/odom
-      Unreliable: false
-      Value: true
-    - Angle Tolerance: 0.10000000149011612
-      Class: rviz/Odometry
-      Covariance:
-        Orientation:
-          Alpha: 0.5
-          Color: 255; 255; 127
-          Color Style: Unique
-          Frame: Local
-          Offset: 1
-          Scale: 1
+        - Alpha: 1
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 6.261447906494141
+            Min Value: -0.6103848814964294
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz/PointCloud2
+          Color: 255; 255; 255
+          Color Transformer: FlatColor
+          Decay Time: 0
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Min Color: 0; 0; 0
+          Name: LiDAR
+          Position Transformer: XYZ
+          Queue Size: 10
+          Selectable: true
+          Size (Pixels): 2
+          Size (m): 0.009999999776482582
+          Style: Points
+          Topic: /robot/dlio/odom_node/pointcloud/deskewed
+          Unreliable: false
+          Use Fixed Frame: true
+          Use rainbow: true
           Value: true
-        Position:
-          Alpha: 0.30000001192092896
-          Color: 204; 51; 204
-          Scale: 1
+      Enabled: true
+      Name: pointCloud
+    - Class: rviz/Group
+      Displays:
+        - Angle Tolerance: 0.10000000149011612
+          Class: rviz/Odometry
+          Covariance:
+            Orientation:
+              Alpha: 0.5
+              Color: 255; 255; 127
+              Color Style: Unique
+              Frame: Local
+              Offset: 1
+              Scale: 1
+              Value: true
+            Position:
+              Alpha: 0.30000001192092896
+              Color: 204; 51; 204
+              Scale: 1
+              Value: true
+            Value: true
+          Enabled: true
+          Keep: 1
+          Name: Odometry
+          Position Tolerance: 0.10000000149011612
+          Shape:
+            Alpha: 1
+            Axes Length: 1
+            Axes Radius: 0.10000000149011612
+            Color: 196; 160; 0
+            Head Length: 0.30000001192092896
+            Head Radius: 0.10000000149011612
+            Shaft Length: 1
+            Shaft Radius: 0.05000000074505806
+            Value: Arrow
+          Topic: /robot/dlio/odom_node/odom
+          Unreliable: false
           Value: true
-        Value: false
+        - Angle Tolerance: 0.10000000149011612
+          Class: rviz/Odometry
+          Covariance:
+            Orientation:
+              Alpha: 0.5
+              Color: 255; 255; 127
+              Color Style: Unique
+              Frame: Local
+              Offset: 1
+              Scale: 1
+              Value: true
+            Position:
+              Alpha: 0.30000001192092896
+              Color: 204; 51; 204
+              Scale: 1
+              Value: true
+            Value: true
+          Enabled: true
+          Keep: 1
+          Name: imu
+          Position Tolerance: 0.10000000149011612
+          Shape:
+            Alpha: 1
+            Axes Length: 1
+            Axes Radius: 0.10000000149011612
+            Color: 255; 25; 0
+            Head Length: 0.30000001192092896
+            Head Radius: 0.10000000149011612
+            Shaft Length: 1
+            Shaft Radius: 0.05000000074505806
+            Value: Axes
+          Topic: /robot/xio_odom/dio_imu_odom
+          Unreliable: false
+          Value: true
+        - Angle Tolerance: 0.10000000149011612
+          Class: rviz/Odometry
+          Covariance:
+            Orientation:
+              Alpha: 0.5
+              Color: 255; 255; 127
+              Color Style: Unique
+              Frame: Local
+              Offset: 1
+              Scale: 1
+              Value: true
+            Position:
+              Alpha: 0.30000001192092896
+              Color: 204; 51; 204
+              Scale: 1
+              Value: true
+            Value: false
+          Enabled: true
+          Keep: 1000
+          Name: Keyframes
+          Position Tolerance: 0.10000000149011612
+          Shape:
+            Alpha: 1
+            Axes Length: 1
+            Axes Radius: 0.20000000298023224
+            Color: 255; 25; 0
+            Head Length: 0.30000001192092896
+            Head Radius: 0.10000000149011612
+            Shaft Length: 1
+            Shaft Radius: 0.05000000074505806
+            Value: Axes
+          Topic: /robot/dlo/odom_node/odom/keyframe
+          Unreliable: false
+          Value: true
+        - Angle Tolerance: 0.009999999776482582
+          Class: rviz/Odometry
+          Covariance:
+            Orientation:
+              Alpha: 0.5
+              Color: 255; 255; 127
+              Color Style: Unique
+              Frame: Local
+              Offset: 1
+              Scale: 1
+              Value: true
+            Position:
+              Alpha: 0.30000001192092896
+              Color: 204; 51; 204
+              Scale: 1
+              Value: true
+            Value: false
+          Enabled: true
+          Keep: 1
+          Name: Odometry
+          Position Tolerance: 0.009999999776482582
+          Shape:
+            Alpha: 1
+            Axes Length: 1
+            Axes Radius: 0.25
+            Color: 255; 25; 0
+            Head Length: 0.30000001192092896
+            Head Radius: 0.10000000149011612
+            Shaft Length: 1
+            Shaft Radius: 0.05000000074505806
+            Value: Axes
+          Topic: /robot/dlo/odom_node/odom
+          Unreliable: false
+          Value: true
       Enabled: true
-      Keep: 1000
-      Name: Keyframes
-      Position Tolerance: 0.10000000149011612
-      Shape:
-        Alpha: 1
-        Axes Length: 1
-        Axes Radius: 0.20000000298023224
-        Color: 255; 25; 0
-        Head Length: 0.30000001192092896
-        Head Radius: 0.10000000149011612
-        Shaft Length: 1
-        Shaft Radius: 0.05000000074505806
-        Value: Axes
-      Topic: /robot/dlo/odom_node/odom/keyframe
-      Unreliable: false
-      Value: true
-    - Alpha: 1
-      Autocompute Intensity Bounds: true
-      Autocompute Value Bounds:
-        Max Value: 6
-        Min Value: 0
-        Value: false
-      Axis: Z
-      Channel Name: intensity
-      Class: rviz/PointCloud2
-      Color: 0; 0; 128
-      Color Transformer: AxisColor
-      Decay Time: 0
+      Name: Odom
+    - Class: rviz/Group
+      Displays:
+        - Alpha: 1
+          Buffer Length: 1
+          Class: rviz/Path
+          Color: 237; 212; 0
+          Enabled: true
+          Head Diameter: 0.30000001192092896
+          Head Length: 0.20000000298023224
+          Length: 0.30000001192092896
+          Line Style: Billboards
+          Line Width: 0.10000000149011612
+          Name: Path
+          Offset:
+            X: 0
+            Y: 0
+            Z: 0
+          Pose Color: 255; 85; 255
+          Pose Style: None
+          Radius: 0.029999999329447746
+          Shaft Diameter: 0.10000000149011612
+          Shaft Length: 0.10000000149011612
+          Topic: /robot/dlio/odom_node/path
+          Unreliable: false
+          Value: true
+        - Alpha: 1
+          Buffer Length: 1
+          Class: rviz/Path
+          Color: 25; 255; 0
+          Enabled: true
+          Head Diameter: 0.30000001192092896
+          Head Length: 0.20000000298023224
+          Length: 0.30000001192092896
+          Line Style: Billboards
+          Line Width: 0.10000000149011612
+          Name: xio_Path
+          Offset:
+            X: 0
+            Y: 0
+            Z: 0
+          Pose Color: 255; 85; 255
+          Pose Style: None
+          Radius: 0.029999999329447746
+          Shaft Diameter: 0.10000000149011612
+          Shaft Length: 0.10000000149011612
+          Topic: /xio_path
+          Unreliable: false
+          Value: true
       Enabled: true
-      Invert Rainbow: false
-      Max Color: 255; 255; 255
-      Min Color: 0; 0; 0
-      Name: Map
-      Position Transformer: XYZ
-      Queue Size: 1000
-      Selectable: true
-      Size (Pixels): 1
-      Size (m): 0.05000000074505806
-      Style: Points
-      Topic: /robot/dlo/map_node/map
-      Unreliable: false
-      Use Fixed Frame: true
-      Use rainbow: true
-      Value: true
-    - Alpha: 1
-      Buffer Length: 1
-      Class: rviz/Path
-      Color: 25; 255; 0
-      Enabled: true
-      Head Diameter: 0.30000001192092896
-      Head Length: 0.20000000298023224
-      Length: 0.30000001192092896
-      Line Style: Billboards
-      Line Width: 0.10000000149011612
       Name: Path
-      Offset:
-        X: 0
-        Y: 0
-        Z: 0
-      Pose Color: 255; 85; 255
-      Pose Style: None
-      Radius: 0.029999999329447746
-      Shaft Diameter: 0.10000000149011612
-      Shaft Length: 0.10000000149011612
-      Topic: /xio_path
-      Unreliable: false
-      Value: true
-    - Angle Tolerance: 0.10000000149011612
-      Class: rviz/Odometry
-      Covariance:
-        Orientation:
-          Alpha: 0.5
-          Color: 255; 255; 127
-          Color Style: Unique
-          Frame: Local
-          Offset: 1
-          Scale: 1
-          Value: true
-        Position:
-          Alpha: 0.30000001192092896
-          Color: 204; 51; 204
-          Scale: 1
-          Value: true
-        Value: true
-      Enabled: true
-      Keep: 1
-      Name: imu
-      Position Tolerance: 0.10000000149011612
-      Shape:
-        Alpha: 1
-        Axes Length: 1
-        Axes Radius: 0.10000000149011612
-        Color: 255; 25; 0
-        Head Length: 0.30000001192092896
-        Head Radius: 0.10000000149011612
-        Shaft Length: 1
-        Shaft Radius: 0.05000000074505806
-        Value: Axes
-      Topic: /robot/xio_odom/dio_imu_odom
-      Unreliable: false
-      Value: true
-    - Alpha: 1
-      Buffer Length: 1
-      Class: rviz/Path
-      Color: 237; 212; 0
-      Enabled: true
-      Head Diameter: 0.30000001192092896
-      Head Length: 0.20000000298023224
-      Length: 0.30000001192092896
-      Line Style: Billboards
-      Line Width: 0.10000000149011612
-      Name: Path
-      Offset:
-        X: 0
-        Y: 0
-        Z: 0
-      Pose Color: 255; 85; 255
-      Pose Style: None
-      Radius: 0.029999999329447746
-      Shaft Diameter: 0.10000000149011612
-      Shaft Length: 0.10000000149011612
-      Topic: /robot/dlio/odom_node/path
-      Unreliable: false
-      Value: true
-    - Angle Tolerance: 0.10000000149011612
-      Class: rviz/Odometry
-      Covariance:
-        Orientation:
-          Alpha: 0.5
-          Color: 255; 255; 127
-          Color Style: Unique
-          Frame: Local
-          Offset: 1
-          Scale: 1
-          Value: true
-        Position:
-          Alpha: 0.30000001192092896
-          Color: 204; 51; 204
-          Scale: 1
-          Value: true
-        Value: true
-      Enabled: true
-      Keep: 1
-      Name: Odometry
-      Position Tolerance: 0.10000000149011612
-      Shape:
-        Alpha: 1
-        Axes Length: 1
-        Axes Radius: 0.10000000149011612
-        Color: 196; 160; 0
-        Head Length: 0.30000001192092896
-        Head Radius: 0.10000000149011612
-        Shaft Length: 1
-        Shaft Radius: 0.05000000074505806
-        Value: Arrow
-      Topic: /robot/dlio/odom_node/odom
-      Unreliable: false
-      Value: true
-    - Alpha: 1
-      Autocompute Intensity Bounds: true
-      Autocompute Value Bounds:
-        Max Value: 10
-        Min Value: -10
-        Value: true
-      Axis: Z
-      Channel Name: intensity
-      Class: rviz/PointCloud2
-      Color: 239; 41; 41
-      Color Transformer: FlatColor
-      Decay Time: 1
-      Enabled: true
-      Invert Rainbow: false
-      Max Color: 255; 255; 255
-      Min Color: 0; 0; 0
-      Name: deskewed
-      Position Transformer: XYZ
-      Queue Size: 10
-      Selectable: true
-      Size (Pixels): 3
-      Size (m): 0.009999999776482582
-      Style: Flat Squares
-      Topic: /robot/xio_odom/deskewed_cloud
-      Unreliable: false
-      Use Fixed Frame: true
-      Use rainbow: true
-      Value: true
   Enabled: true
   Global Options:
     Background Color: 64; 64; 64
@@ -352,25 +358,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 13.489042282104492
+      Distance: 39.609432220458984
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.1855810582637787
-        Y: 1.0048421621322632
-        Z: 15.182989120483398
+        X: 1.2343264818191528
+        Y: 5.6423020362854
+        Z: 10.041247367858887
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.3497973680496216
+      Pitch: 1.0097970962524414
       Target Frame: robot/base_link
       Value: Orbit (rviz)
-      Yaw: 3.061279535293579
+      Yaw: 3.4013047218322754
     Saved: ~
 Window Geometry:
   Displays:

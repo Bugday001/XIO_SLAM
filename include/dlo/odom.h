@@ -85,7 +85,6 @@ private:
 
   ros::Subscriber icp_sub;
   ros::Subscriber imu_sub;
-  ros::Subscriber gt_sub;
 
   ros::Publisher odom_pub;
   ros::Publisher pose_pub;
@@ -220,7 +219,8 @@ private:
   double lastImuT_opt;
   double delta_t = 0;
   bool debugVerbose;
-
+  double integDt = 0;
+  
   static bool comparatorImu(ImuMeas m1, ImuMeas m2) {
     return (m1.stamp < m2.stamp);
   };
