@@ -73,6 +73,7 @@ namespace xio {
     union {
       std::uint32_t t; // time since beginning of scan in nanoseconds
       float time; // time since beginning of scan in seconds
+      std::uint32_t offset_time; // time since beginning of scan in nanoseconds
       double timestamp; // absolute timestamp in seconds
     };
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -86,9 +87,25 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(xio::Point,
                                  (float, intensity, intensity)
                                  (std::uint32_t, t, t)
                                  (float, time, time)
+                                 (std::uint32_t, offset_time, offset_time)
                                  (double, timestamp, timestamp))
 
 typedef xio::Point PointType;
+
+struct LivoxPoint {
+  LivoxPoint(): data{0.f, 0.f, 0.f, 1.f} {}
+  PCL_ADD_POINT4D;
+  float intensity; // intensity
+  std::uint32_t offset_time; // LIVOX: time from beginning of scan in nanoseconds
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+} EIGEN_ALIGN16;
+
+POINT_CLOUD_REGISTER_POINT_STRUCT(LivoxPoint,
+                                 (float, x, x)
+                                 (float, y, y)
+                                 (float, z, z)
+                                 (float, intensity, intensity)
+                                 (std::uint32_t, offset_time, offset_time))
 
 namespace dlo {
 

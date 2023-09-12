@@ -1,8 +1,0 @@
-<launch>
-    <node name="imuPre" pkg="XIO" type="imuPreintegration_node" output="screen">
-      <remap from="/mavros/local_position/odom" to="/test_lio_sam/OptVw"/>
-      <remap from="/mavros/imu/data" to="/imu_raw"/>
-    </node>
-<!-- lio_sam_6axis/mapping/odometry_incremental -->
-  <!-- <node name="rvizvisualisation" pkg="rviz" type="rviz" output="screen" args="-d $(find XIO)/cfg/xio.rviz" /> -->
-</launch>

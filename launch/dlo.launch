@@ -15,14 +15,20 @@
   <!-- /3Dlidar16_scan /mavros/imu/data-->
     <!-- <arg name="pointcloud_topic" default="/3Dlidar16_scan"/>
   <arg name="imu_topic" default="/mavros/imu/data"/> -->
+  <!-- stair -->
   <!-- <arg name="pointcloud_topic" default="/rslidar_points"/>
   <arg name="imu_topic" default="/imu/data"/> -->
-  <arg name="pointcloud_topic" default="/points_raw"/>
-  <arg name="imu_topic" default="/imu_raw"/>
+  <!-- livox horizon -->
+  <!-- <arg name="pointcloud_topic" default="/points_raw"/>
+  <arg name="imu_topic" default="/imu_raw"/> -->
 
   <!-- <arg name="pointcloud_topic" default="/robot/lidar"/>
   <arg name="imu_topic" default="/robot/imu"/> -->
-
+    <!-- livox 2023 -->
+  <arg name="pointcloud_topic" default="/livox/lidarss"/>
+  <arg name="imu_topic" default="/livox/imu"/>
+    <!-- <arg name="pointcloud_topic" default="/velodyne_points"/>
+  <arg name="imu_topic" default="/imu/data"/> -->
   <!-- DLO Odometry Node -->
   <node ns="$(arg robot_namespace)" name="xio_odom" pkg="xio" type="dlo_odom_node" output="screen" clear_params="true">
 

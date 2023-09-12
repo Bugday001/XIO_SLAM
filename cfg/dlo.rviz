@@ -5,6 +5,8 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
+        - /pointCloud1
+        - /pointCloud1/deskewed1
         - /Path1
       Splitter Ratio: 0.3785558044910431
     Tree Height: 841

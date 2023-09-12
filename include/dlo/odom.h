@@ -17,6 +17,8 @@
 #include <g2o/core/sparse_block_matrix.h>
 #include <g2o/solvers/eigen/linear_solver_eigen.h>
 
+#include "livox_ros_driver2/CustomMsg.h"
+
 class dlo::OdomNode {
 
 public:
@@ -37,7 +39,7 @@ private:
   void icpCB(const sensor_msgs::PointCloud2ConstPtr& pc);
   void imuCB(const sensor_msgs::Imu::ConstPtr& imu);
   void gtCB(const nav_msgs::OdometryConstPtr &PointRes);
-
+  void callbackLivox(const livox_ros_driver2::CustomMsgConstPtr& livox);
   void getParams();
 
   void publishToROS();
@@ -83,6 +85,7 @@ private:
   ros::NodeHandle nh;
   ros::Timer abort_timer;
 
+  ros::Subscriber livox_sub;
   ros::Subscriber icp_sub;
   ros::Subscriber imu_sub;
 
@@ -93,7 +96,8 @@ private:
   ros::Publisher cur_cloud_t_pub;
   ros::Publisher deskewed_cloud_pub;
   ros::Publisher imu_odom_pub_;
-  
+  ros::Publisher livox_repub_;
+
   ros::Timer publish_timer;
 
   Eigen::Vector3f origin;
@@ -150,7 +154,6 @@ private:
 
   pcl::CropBox<PointType> crop;
   pcl::VoxelGrid<PointType> vf_scan;
-  pcl::VoxelGrid<PointType> vf_submap;
 
   nav_msgs::Odometry odom;
   nav_msgs::Odometry kf;
@@ -272,9 +275,6 @@ private:
 
   bool vf_scan_use_;
   double vf_scan_res_;
-
-  bool vf_submap_use_;
-  double vf_submap_res_;
 
   bool adaptive_params_use_;
 

@@ -286,6 +286,6 @@ namespace xio
     }
 }
 namespace xio {
-    enum class SensorType { OUSTER, VELODYNE, HESAI, UNKNOWN };
+    enum class SensorType { INIT, OUSTER, VELODYNE, HESAI, LIVOX, UNKNOWN };
 }
 #endif

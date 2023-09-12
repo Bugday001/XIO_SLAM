@@ -1,1 +1,0 @@
-    <node pkg="rosbag" type="play" name="playbag1" output="screen" args="--clock $(find XIO)/bags/1.bag"/>

@@ -30,7 +30,8 @@ dlo::OdomNode::OdomNode(ros::NodeHandle node_handle) : nh(node_handle) {
 
   this->icp_sub = this->nh.subscribe("pointcloud", 1, &dlo::OdomNode::icpCB, this);
   this->imu_sub = this->nh.subscribe("imu", 1000, &dlo::OdomNode::imuCB, this);
-  
+  this->livox_sub = this->nh.subscribe("/livox/lidar", 1000, &dlo::OdomNode::callbackLivox, this);
+
   this->odom_pub = this->nh.advertise<nav_msgs::Odometry>("odom", 1);
   this->pose_pub = this->nh.advertise<geometry_msgs::PoseStamped>("pose", 1);
   this->kf_pub = this->nh.advertise<nav_msgs::Odometry>("kfs", 1, true);
@@ -38,6 +39,7 @@ dlo::OdomNode::OdomNode(ros::NodeHandle node_handle) : nh(node_handle) {
   this->cur_cloud_t_pub = this->nh.advertise<sensor_msgs::PointCloud2>("cur_cloud_t", 1, true);
   this->deskewed_cloud_pub = this->nh.advertise<sensor_msgs::PointCloud2>("deskewed_cloud", 1, true);
   this->imu_odom_pub_ = this->nh.advertise<nav_msgs::Odometry>("dio_imu_odom", 1, true);
+  this->livox_repub_ =  this->nh.advertise<sensor_msgs::PointCloud2>("pointcloud", 1, true);
 
   this->publish_timer = this->nh.createTimer(ros::Duration(0.01), &dlo::OdomNode::publishPose, this);
 
@@ -115,9 +117,6 @@ dlo::OdomNode::OdomNode(ros::NodeHandle node_handle) : nh(node_handle) {
   this->crop.setNegative(true);
   this->crop.setMin(Eigen::Vector4f(-this->crop_size_, -this->crop_size_, -this->crop_size_, 1.0));
   this->crop.setMax(Eigen::Vector4f(this->crop_size_, this->crop_size_, this->crop_size_, 1.0));
-
-  this->vf_scan.setLeafSize(this->vf_scan_res_, this->vf_scan_res_, this->vf_scan_res_);
-  this->vf_submap.setLeafSize(this->vf_submap_res_, this->vf_submap_res_, this->vf_submap_res_);
 
   this->metrics.spaciousness.push_back(0.);
 
@@ -232,9 +231,7 @@ void dlo::OdomNode::getParams() {
   // Voxel Grid Filter
   ros::param::param<bool>("~dlo/odomNode/preprocessing/voxelFilter/scan/use", this->vf_scan_use_, true);
   ros::param::param<double>("~dlo/odomNode/preprocessing/voxelFilter/scan/res", this->vf_scan_res_, 0.05);
-  ros::param::param<bool>("~dlo/odomNode/preprocessing/voxelFilter/submap/use", this->vf_submap_use_, false);
-  ros::param::param<double>("~dlo/odomNode/preprocessing/voxelFilter/submap/res", this->vf_submap_res_, 0.1);
-
+ 
   // Adaptive Parameters
   ros::param::param<bool>("~dlo/adaptiveParams", this->adaptive_params_use_, false);
 
@@ -264,7 +261,7 @@ void dlo::OdomNode::getParams() {
   extQRPY = Eigen::Quaterniond(extRPY).inverse();
   this->deskew_status = false;
   this->first_valid_scan = false;
-
+  this->sensor = xio::SensorType::INIT;
   ros::param::param<bool>("~dlo/deskew", this->deskew_, true);
 
 }
@@ -500,7 +497,10 @@ void dlo::OdomNode::preprocessPoints(const sensor_msgs::PointCloud2ConstPtr& pc)
     } else if (field.name == "timestamp") {
       this->sensor = xio::SensorType::HESAI;
       break;
-    }
+    } else if (field.name == "offset_time") {
+      this->sensor = xio::SensorType::LIVOX;
+      break;
+    } 
   }
 
   if (this->sensor == xio::SensorType::UNKNOWN) {
@@ -510,6 +510,12 @@ void dlo::OdomNode::preprocessPoints(const sensor_msgs::PointCloud2ConstPtr& pc)
   std::vector<int> idx;
   this->current_scan->is_dense = false;
   pcl::removeNaNFromPointCloud(*this->current_scan, *this->current_scan, idx);
+  // Crop Box Filter
+  if (this->crop_use_) {
+    this->crop.setInputCloud(this->current_scan);
+    this->crop.filter(*this->current_scan);
+  }
+  
   *this->original_scan = *this->current_scan;
   if(this->deskew_ ) {
     this->deskewPointcloud();
@@ -519,11 +525,6 @@ void dlo::OdomNode::preprocessPoints(const sensor_msgs::PointCloud2ConstPtr& pc)
     imuOptPreint();
   }
 
-  // Crop Box Filter
-  if (this->crop_use_) {
-    this->crop.setInputCloud(this->current_scan);
-    this->crop.filter(*this->current_scan);
-  }
   // Voxel Grid Filter
   if (this->vf_scan_use_) {
     pcl::PointCloud<PointType>::Ptr current_scan_
@@ -532,10 +533,6 @@ void dlo::OdomNode::preprocessPoints(const sensor_msgs::PointCloud2ConstPtr& pc)
     this->vf_scan.filter(*current_scan_);
     this->current_scan = current_scan_;
   }
-  // else {
-  //   this->current_scan = this->deskewed_scan;
-  // }
-
 }
 
 void dlo::OdomNode::deskewPointcloud() {
@@ -556,16 +553,25 @@ void dlo::OdomNode::deskewPointcloud() {
     extract_point_time = [&sweep_ref_time](PointType pt)
       { return sweep_ref_time + pt.time; };
 
+  }  else if (this->sensor == xio::SensorType::LIVOX) {
+
+    point_time_cmp = [](const PointType& p1, const PointType& p2)
+      { return p1.offset_time < p2.offset_time; };
+    extract_point_time = [&sweep_ref_time](PointType pt)
+      { return sweep_ref_time + pt.offset_time * 1e-9f; };
+
   } else if (this->sensor == xio::SensorType::HESAI) {
     point_time_cmp = [](const PointType& p1, const PointType& p2)
       { return p1.timestamp < p2.timestamp; };
     extract_point_time = [&sweep_ref_time](PointType pt)
       { return pt.timestamp; };
   }
+
   pcl::PointCloud<PointType>::Ptr deskewed_scan_ (boost::make_shared<pcl::PointCloud<PointType>>());
   deskewed_scan_->points.resize(this->original_scan->points.size());
   std::partial_sort_copy(this->original_scan->points.begin(), this->original_scan->points.end(),
                         deskewed_scan_->points.begin(), deskewed_scan_->points.end(), point_time_cmp);
+  //remove the point with the same timestamp
   double lastTimeStamp = -1;
   pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
   pcl::ExtractIndices<PointType> extract;
@@ -583,6 +589,8 @@ void dlo::OdomNode::deskewPointcloud() {
   extract.setIndices(inliers);
   extract.setNegative(true);
   extract.filter(*deskewed_scan_);
+
+  //get the end time of current scan
   this->totalPointNums = deskewed_scan_->size();
   auto pointEnd = (*deskewed_scan_)[this->totalPointNums-1];
   this->curr_frame_end_time = extract_point_time(pointEnd);
@@ -622,12 +630,6 @@ void dlo::OdomNode::initializeInputTarget() {
   // initialize keyframes
   pcl::PointCloud<PointType>::Ptr first_keyframe (new pcl::PointCloud<PointType>);
   pcl::transformPointCloud (*this->current_scan, *first_keyframe, this->T);
-
-  // voxelization for submap
-  if (this->vf_submap_use_) {
-    this->vf_submap.setInputCloud(first_keyframe);
-    this->vf_submap.filter(*first_keyframe);
-  }
 
   // keep history of keyframes
   this->keyframes.push_back(std::make_pair(std::make_pair(this->pose, this->rotq), first_keyframe));
@@ -706,7 +708,6 @@ void dlo::OdomNode::gravityAlign() {
  **/
 
 void dlo::OdomNode::initializeDLO() {
-
   // Calibrate IMU
   if (!this->imu_calibrated && this->imu_use_) {
     return;
@@ -747,6 +748,10 @@ sensor_msgs::Imu dlo::OdomNode::imuConverter(const sensor_msgs::Imu &imu_in)
     sensor_msgs::Imu imu_out = imu_in;
     // rotate acceleration
     Eigen::Vector3d acc(imu_in.linear_acceleration.x, imu_in.linear_acceleration.y, imu_in.linear_acceleration.z);
+    //livox雷达acc单位换算成m/s^2
+    if(this->sensor == xio::SensorType::LIVOX) {
+      acc *= 9.81;
+    }
     acc = extRot * acc;
     imu_out.linear_acceleration.x = acc.x();
     imu_out.linear_acceleration.y = acc.y();
@@ -862,6 +867,35 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
 }
 
 /**
+ * livox雷达的回调函数
+*/
+void dlo::OdomNode::callbackLivox(const livox_ros_driver2::CustomMsgConstPtr& livox) {
+
+  // convert custom livox message to pcl pointcloud
+  pcl::PointCloud<LivoxPoint>::Ptr cloud (new pcl::PointCloud<LivoxPoint>);
+  this->sensor = xio::SensorType::LIVOX;
+  for (int i = 0; i < livox->point_num; i++) {
+    LivoxPoint p;
+    p.x = livox->points[i].x;
+    p.y = livox->points[i].y;
+    p.z = livox->points[i].z;
+    p.intensity = livox->points[i].reflectivity;
+    p.offset_time = livox->points[i].offset_time;
+    cloud->push_back(p);
+  }
+
+  // publish converted livox pointcloud
+  sensor_msgs::PointCloud2 cloud_ros;
+  pcl::toROSMsg(*cloud, cloud_ros);
+
+  cloud_ros.header.stamp = livox->header.stamp;
+  cloud_ros.header.seq = livox->header.seq;
+  cloud_ros.header.frame_id = "base_link";
+  this->livox_repub_.publish(cloud_ros);
+}
+
+
+/**
  * 对两帧之间的imu进行积分
  * return 是否初始化了
 */
@@ -964,7 +998,7 @@ void dlo::OdomNode::imuPreintegration() {
  **/
 void dlo::OdomNode::imuCB(const sensor_msgs::Imu::ConstPtr& imu) {
 
-  if (!this->imu_use_) {
+  if (!this->imu_use_ || this->sensor == xio::SensorType::INIT ) {
     return;
   }
 
@@ -1462,12 +1496,6 @@ void dlo::OdomNode::updateKeyframes() {
   if (newKeyframe) {
 
     ++this->num_keyframes;
-
-    // voxelization for submap
-    if (this->vf_submap_use_) {
-      this->vf_submap.setInputCloud(this->current_scan_t);
-      this->vf_submap.filter(*this->current_scan_t);
-    }
 
     // update keyframe vector
     this->keyframes.push_back(std::make_pair(std::make_pair(this->pose, this->rotq), this->current_scan_t));
