@@ -15,22 +15,18 @@
   <!-- /3Dlidar16_scan /mavros/imu/data-->
     <!-- <arg name="pointcloud_topic" default="/3Dlidar16_scan"/>
   <arg name="imu_topic" default="/mavros/imu/data"/> -->
-  <!-- stair -->
   <!-- <arg name="pointcloud_topic" default="/rslidar_points"/>
   <arg name="imu_topic" default="/imu/data"/> -->
-  <!-- livox horizon -->
-  <!-- <arg name="pointcloud_topic" default="/points_raw"/>
-  <arg name="imu_topic" default="/imu_raw"/> -->
+  <arg name="pointcloud_topic" default="/points_raw"/>
+  <arg name="imu_topic" default="/imu_raw"/>
 
   <!-- <arg name="pointcloud_topic" default="/robot/lidar"/>
   <arg name="imu_topic" default="/robot/imu"/> -->
-    <!-- livox 2023 -->
-  <arg name="pointcloud_topic" default="/livox/lidarss"/>
-  <arg name="imu_topic" default="/livox/imu"/>
-    <!-- <arg name="pointcloud_topic" default="/velodyne_points"/>
-  <arg name="imu_topic" default="/imu/data"/> -->
+
+    <!-- <arg name="pointcloud_topic" default="/livox/lidarss"/>
+  <arg name="imu_topic" default="/livox/imu"/> -->
   <!-- DLO Odometry Node -->
-  <node ns="$(arg robot_namespace)" name="xio_odom" pkg="xio" type="dlo_odom_node" output="screen" clear_params="true">
+  <node ns="$(arg robot_namespace)" name="$(arg robot_namespace)xio_odom" pkg="xio" type="dlo_odom_node" output="screen" clear_params="true">
 
     <!-- Load parameters -->
     <rosparam file="$(find xio)/cfg/dlo.yaml" command="load"/>
@@ -48,7 +44,7 @@
   </node>
 
   <!-- DLO Mapping Node -->
-  <node ns="$(arg robot_namespace)" name="xio_map" pkg="xio" type="dlo_map_node" output="screen" clear_params="true">
+  <node ns="$(arg robot_namespace)" name="$(arg robot_namespace)xio_map" pkg="xio" type="dlo_map_node" output="screen" clear_params="true">
 
     <!-- Load parameters -->
     <rosparam file="$(find xio)/cfg/dlo.yaml" command="load"/>
@@ -61,12 +57,12 @@
 
   </node>
 
-  <node  pkg="offboard" type="odom2path_node" name="xio_odom2path_node" output="screen">
+  <node  pkg="offboard" type="odom2path_node" name="$(arg robot_namespace)xio_odom2path_node" output="screen">
     <remap from="/ground_truth/state" to="/robot/dlo/odom_node/odom"/>
-    <remap from="/ground_truth/path" to="/xio_path"/>
+    <remap from="/ground_truth/path" to="/robot/xio_path"/>
     <param name="/path/frame_id" value="/robot/odom" />
   </node>
   <!-- RViz -->
-  <node pkg="rviz" type="rviz" name="dlo_rviz" args="-d $(find xio)/cfg/dlo.rviz"/>
+  <node pkg="rviz" type="rviz" name="$(arg robot_namespace)dlo_rviz" args="-d $(find xio)/cfg/dlo.rviz"/>
 
 </launch>

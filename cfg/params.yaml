@@ -11,6 +11,7 @@ dlo:
 
   odomNode:
     debugVerbose: false
+    isLivox: false
     initialPose:
       use: false
       position:
@@ -29,11 +30,14 @@ dlo:
         size: 1.0
       voxelFilter:
         scan:
+          use: true
+          res: 0.1
+        submap:
           use: false
           res: 0.25
 
     keyframe:
-      threshD: 5.0
+      threshD: 1.0
       threshR: 45.0
 
     submap:
@@ -46,18 +50,18 @@ dlo:
       calibTime: 3
       bufferSize: 2000
       extrinsicTrans: [0.0, 0.0, 0.0]
-      # extrinsicRot: [-1, 0, 0,
-      #                 0, 1, 0,
-      #                 0, 0, -1]
-      # extrinsicRPY: [0,  1, 0,
-      #                -1, 0, 0,
-      #                 0, 0, 1]
-      extrinsicRot: [1, 0, 0,
-                  0, 1, 0,
-                  0, 0, 1]
-      extrinsicRPY: [1, 0, 0,
-                  0, 1, 0,
-                  0, 0, 1]
+      extrinsicRot: [-1, 0, 0,
+                      0, 1, 0,
+                      0, 0, -1]
+      extrinsicRPY: [0,  1, 0,
+                     -1, 0, 0,
+                      0, 0, 1]
+      # extrinsicRot: [1, 0, 0,
+      #             0, 1, 0,
+      #             0, 0, 1]
+      # extrinsicRPY: [1, 0, 0,
+      #             0, 1, 0,
+      #             0, 0, 1]
     gicp:
       minNumPoints: 64
       s2m:

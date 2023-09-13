@@ -73,7 +73,7 @@ namespace xio {
     union {
       std::uint32_t t; // time since beginning of scan in nanoseconds
       float time; // time since beginning of scan in seconds
-      std::uint32_t offset_time; // time since beginning of scan in nanoseconds
+      std::uint32_t offset_time;
       double timestamp; // absolute timestamp in seconds
     };
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

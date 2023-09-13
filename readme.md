@@ -14,14 +14,14 @@ lio-sam walking dataset:
     - [X] 添加了优化结果速度限制。
 - [X] 解决imu的odom抖动问题，imu预积分效果不好。
     - [X] 在预积分reset部分添加了之前遗漏的参数。速度限制作用明显下降。
-- [X] 适配livox雷达，要求有livox_ros_driver2的msg。若不使用则需要注释掉。
+- [X]  适配livox雷达，要求有livox_ros_driver2的msg。若不使用则需要注释掉。回滚至[前一版本](b13f5fb548dd9a0664066b6a5acd2cb3150bb843)。解决了定位飘逸的问题，但仍不稳定。
 ## TO DO
 - [ ] 提升稳定性。
 - [ ] 解决优化结果bg_, ba_都是0.0的问题。
 - [ ] 点云去畸变。
     - [X] imu时间戳与雷达对齐,避免部分点云无法去畸变.
     - [X] 对齐时间戳后出现抖动，怀疑是由于修改了积分的时间段，将原本积分到header.stamp的修改到积分到最后一个点云点的时间戳，积分时间不变还是0.1s.为`imuPreintegration`函数加锁，有所缓解。
-    - [ ] 缩短积分时间，有时积分耗时80ms。仅仅使用一个队列积分，避免对同一数据积分两次。
+    - [ ] 缩短积分时间，有时积分耗时80ms。
 
 ## Acknowledgement
 [DLO & DLIO](https://github.com/vectr-ucla), [LIO-SAM](https://github.com/TixiaoShan/LIO-SAM)

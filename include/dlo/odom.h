@@ -40,6 +40,7 @@ private:
   void imuCB(const sensor_msgs::Imu::ConstPtr& imu);
   void gtCB(const nav_msgs::OdometryConstPtr &PointRes);
   void callbackLivox(const livox_ros_driver2::CustomMsgConstPtr& livox);
+
   void getParams();
 
   void publishToROS();
@@ -85,9 +86,9 @@ private:
   ros::NodeHandle nh;
   ros::Timer abort_timer;
 
-  ros::Subscriber livox_sub;
   ros::Subscriber icp_sub;
   ros::Subscriber imu_sub;
+  ros::Subscriber livox_sub;
 
   ros::Publisher odom_pub;
   ros::Publisher pose_pub;
@@ -121,6 +122,7 @@ private:
   bool deskew_status;
   bool first_valid_scan;
   bool deskew_;
+  bool isLivox;
   std::vector<std::pair<xio::NavState, double>> imu_states_;
   long deskewNums, totalPointNums;
 
@@ -154,6 +156,7 @@ private:
 
   pcl::CropBox<PointType> crop;
   pcl::VoxelGrid<PointType> vf_scan;
+  pcl::VoxelGrid<PointType> vf_submap;
 
   nav_msgs::Odometry odom;
   nav_msgs::Odometry kf;
@@ -275,6 +278,9 @@ private:
 
   bool vf_scan_use_;
   double vf_scan_res_;
+
+  bool vf_submap_use_;
+  double vf_submap_res_;
 
   bool adaptive_params_use_;
 
