@@ -21,6 +21,7 @@ link_directories(${PCL_LIBRARY_DIRS} ${GTSAM_LIBRARY_DIRS})
 find_package( Eigen3 REQUIRED )
 include_directories(${EIGEN3_INCLUDE_DIR})
 
+include_directories(/usr/include/glog)
 include(FindOpenMP)
 if(OPENMP_FOUND)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
@@ -110,7 +111,8 @@ add_dependencies(dlo_odom_node ${catkin_EXPORTED_TARGETS})
 target_compile_options(dlo_odom_node PRIVATE ${OpenMP_FLAGS})
 target_link_libraries(dlo_odom_node ${catkin_LIBRARIES} ${PCL_LIBRARIES} 
                                           ${OpenMP_LIBS} Threads::Threads nano_gicp ${G2O_LIBS}
-                                          ${Sophus_LIBRARIES} fmt::fmt)
+                                          ${Sophus_LIBRARIES} fmt::fmt
+                                          /usr/lib/x86_64-linux-gnu/libglog.so)
 
 # Mapping Node
 add_executable (dlo_map_node src/dlo/map_node.cc src/dlo/map.cc)

@@ -77,8 +77,8 @@ class VertexVelocity : public g2o::BaseVertex<3, Eigen::Vector3d> {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     VertexVelocity() {}
 
-    virtual bool read(std::istream& is) { return false; }
-    virtual bool write(std::ostream& os) const { return false; }
+    virtual bool read(std::istream& is) { return true; }
+    virtual bool write(std::ostream& os) const { return true; }
 
     virtual void setToOriginImpl() { _estimate.setZero(); }
 

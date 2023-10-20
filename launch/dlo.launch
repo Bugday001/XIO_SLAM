@@ -26,7 +26,9 @@
     <!-- <arg name="pointcloud_topic" default="/livox/lidarss"/>
   <arg name="imu_topic" default="/livox/imu"/> -->
   <!-- DLO Odometry Node -->
-  <node ns="$(arg robot_namespace)" name="$(arg robot_namespace)xio_odom" pkg="xio" type="dlo_odom_node" output="screen" clear_params="true">
+  <node ns="$(arg robot_namespace)" name="$(arg robot_namespace)xio_odom" pkg="xio" type="dlo_odom_node" 
+    output="screen" clear_params="true">
+    <!-- launch-prefix= "gdb -ex run -arg"> -->
 
     <!-- Load parameters -->
     <rosparam file="$(find xio)/cfg/dlo.yaml" command="load"/>

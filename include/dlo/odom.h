@@ -199,6 +199,15 @@ private:
     XYZd lin_accel;
   };
 
+  struct timeCnt {
+    double whole_t;
+    double deskew_t;
+    double integ_t;
+    double getSubmap_t;
+    double gicp_t;
+    double updateKeyframe_t;
+  };
+  timeCnt timePrint;
 
   // Sensor Type
   xio::SensorType sensor;

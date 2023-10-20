@@ -276,7 +276,10 @@ namespace xio
 
         double dt = match_iter_n->second - match_iter->second;
         double s = (query_time - match_iter->second) / dt;  // s=0 时为第一帧，s=1时为next
-
+        if (fabs(dt) < 1e-6) {
+            result = take_pose_func(match_iter->first);
+            return true;
+        }
         Sophus::SE3d pose_first = take_pose_func(match_iter->first);
         Sophus::SE3d pose_next = take_pose_func(match_iter_n->first);
         result = {pose_first.unit_quaternion().slerp(s, pose_next.unit_quaternion()),

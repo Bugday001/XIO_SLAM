@@ -7,6 +7,8 @@ Panels:
         - /Global Options1
         - /pointCloud1
         - /pointCloud1/deskewed1
+        - /pointCloud1/Map1
+        - /pointCloud1/LiDAR1
         - /Path1
         - /Path1/xio_Path1
       Splitter Ratio: 0.3785558044910431
@@ -88,9 +90,9 @@ Visualization Manager:
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 6
-            Min Value: 0
-            Value: false
+            Max Value: 26.59056282043457
+            Min Value: -2.3815736770629883
+            Value: true
           Axis: Z
           Channel Name: intensity
           Class: rviz/PointCloud2
@@ -122,7 +124,7 @@ Visualization Manager:
           Axis: Z
           Channel Name: intensity
           Class: rviz/PointCloud2
-          Color: 255; 255; 255
+          Color: 255; 255; 0
           Color Transformer: FlatColor
           Decay Time: 0
           Enabled: true
@@ -136,7 +138,7 @@ Visualization Manager:
           Size (Pixels): 2
           Size (m): 0.009999999776482582
           Style: Points
-          Topic: /robot/dlio/odom_node/pointcloud/deskewed
+          Topic: /robot/robotxio_odom/deskewed_cloud
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
@@ -361,25 +363,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 32.41788864135742
+      Distance: 167.14706420898438
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -4.910769462585449
-        Y: -2.639901876449585
-        Z: 2.0132627487182617
+        X: 3.620720624923706
+        Y: -0.4335728585720062
+        Z: 5.359862327575684
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.2497977465391159
+      Pitch: 0.4797985553741455
       Target Frame: robot/base_link
       Value: Orbit (rviz)
-      Yaw: 2.9012985229492188
+      Yaw: 4.946291446685791
     Saved: ~
 Window Geometry:
   Displays:

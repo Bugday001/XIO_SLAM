@@ -365,10 +365,13 @@ void dlo::OdomNode::publishImuOdom() {
 
 void dlo::OdomNode::publishCloud() {
   sensor_msgs::PointCloud2 cur_cloud_t_ros;
-  pcl::toROSMsg(*this->current_scan, cur_cloud_t_ros);
-  cur_cloud_t_ros.header.stamp = this->scan_stamp;
-  cur_cloud_t_ros.header.frame_id = this->odom_frame;
-  this->cur_cloud_t_pub.publish(cur_cloud_t_ros);
+  if(this->current_scan->points.size() == this->current_scan->width * this->current_scan->height) {
+      pcl::toROSMsg(*this->current_scan, cur_cloud_t_ros);
+    cur_cloud_t_ros.header.stamp = this->scan_stamp;
+    cur_cloud_t_ros.header.frame_id = this->odom_frame;
+    this->cur_cloud_t_pub.publish(cur_cloud_t_ros);
+  }
+
 
   //deskew
   sensor_msgs::PointCloud2 cur_cloud_deskewed;
@@ -376,12 +379,13 @@ void dlo::OdomNode::publishCloud() {
   Eigen::Matrix4d T_cloud = Eigen::Matrix4d::Identity();
   T_cloud.block<3,3>(0,0) = this->lidarState.qwb.matrix();
   T_cloud.block<3,1>(0,3) = this->lidarState.Pwb;
-  
   pcl::transformPointCloud (*this->original_scan, *deskewed_scan_t_, T_cloud);
-  pcl::toROSMsg(*deskewed_scan_t_, cur_cloud_deskewed);
-  cur_cloud_deskewed.header.stamp = this->scan_stamp;
-  cur_cloud_deskewed.header.frame_id = this->odom_frame;
-  this->deskewed_cloud_pub.publish(cur_cloud_deskewed);
+  if(deskewed_scan_t_->points.size() == deskewed_scan_t_->width * deskewed_scan_t_->height) {
+    pcl::toROSMsg(*deskewed_scan_t_, cur_cloud_deskewed);
+    cur_cloud_deskewed.header.stamp = this->scan_stamp;
+    cur_cloud_deskewed.header.frame_id = this->odom_frame;
+    this->deskewed_cloud_pub.publish(cur_cloud_deskewed);
+  }
 }
 
 /**
@@ -518,6 +522,7 @@ void dlo::OdomNode::preprocessPoints(const sensor_msgs::PointCloud2ConstPtr& pc)
   *this->original_scan = *this->current_scan;
   if(this->deskew_ ) {
     this->deskewPointcloud();
+    // std::cout<<"end desk";
   }
   else {
     this->curr_frame_end_time = this->curr_frame_stamp;
@@ -599,7 +604,9 @@ void dlo::OdomNode::deskewPointcloud() {
   auto pointEnd = (*deskewed_scan_)[this->totalPointNums-1];
   this->curr_frame_end_time = extract_point_time(pointEnd);
   //两帧之间imu积分
+  // std::cout<<"be pre";
   imuOptPreint();
+  // std::cout<<"end pre";
   if(imuOptInitialized == false || imu_states_.empty()) {
     return;
   }
@@ -824,6 +831,8 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
     ROS_WARN("Low number of points!");
     return;
   }
+  timePrint.deskew_t = ros::Time::now().toSec() - then;
+
   // Compute Metrics
   this->metrics_thread = std::thread( &dlo::OdomNode::computeMetrics, this );
   this->metrics_thread.detach();
@@ -832,7 +841,6 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
   if (this->adaptive_params_use_){
     this->setAdaptiveParams();
   }
-
   // Set new frame as input source for both gicp objects
   this->setInputSources();
 
@@ -841,17 +849,16 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
     this->initializeInputTarget();
     return;
   }
-  
-  this->comp_times.push_back(ros::Time::now().toSec() - then);
   // Get the next pose via IMU + S2M
   this->getNextPose();
+  timePrint.gicp_t = ros::Time::now().toSec() - then - timePrint.deskew_t;
   // Update current keyframe poses and map
   this->updateKeyframes();
   // Update trajectory
   this->trajectory.push_back( std::make_pair(this->pose, this->rotq) );
 
   // Update some statistics
-  this->comp_times.push_back(ros::Time::now().toSec() - then);
+  timePrint.updateKeyframe_t = ros::Time::now().toSec() - then - timePrint.gicp_t - timePrint.deskew_t;
 
   // imu 积分
   if(imuOptInitialized) {
@@ -859,9 +866,9 @@ void dlo::OdomNode::icpCB(const sensor_msgs::PointCloud2ConstPtr& pc) {
     imuPreintegration();
     this->mtx_imu.unlock();
   }
-
-
-  this->comp_times.push_back(ros::Time::now().toSec() - then);
+  std::cout<<"5"<<std::endl;
+  timePrint.integ_t =  ros::Time::now().toSec() - then - timePrint.gicp_t - timePrint.deskew_t - timePrint.updateKeyframe_t;
+  timePrint.whole_t =  ros::Time::now().toSec() - then;
   //Update next point
   this->prev_point_ = this->pose.cast<double>();
   // Update next time stamp
@@ -935,14 +942,18 @@ void dlo::OdomNode::imuOptPreint()
     //使用 std::unique_lock(通过 std::mutex) 来锁住当前线程
     std::unique_lock<decltype(this->mtx_imu)> lock(this->mtx_imu);
     double tmptime = this->curr_frame_end_time;
-    this->cv_imu_stamp.wait(lock, [this, &tmptime]{ return imuQueOpt.back().header.stamp.toSec() >= tmptime; });
+    this->cv_imu_stamp.wait(lock, [this, &tmptime]{ return !this->imuQueOpt.empty()&&imuQueOpt.back().header.stamp.toSec() >= tmptime; });
   }
   imu_states_.clear();
   // 1. integrate imu data and optimize
+  sensor_msgs::Imu endImu;
+  // std::cout<<"be while";
+  // this->mtx_imu.lock();
   while (!imuQueOpt.empty())
   {
       // pop and integrate imu data that is between two optimizations
       sensor_msgs::Imu *thisImu = &imuQueOpt.front();
+      endImu  = *thisImu;
       double imuTime = imuQueOpt.front().header.stamp.toSec();
       if (imuTime < this->curr_frame_end_time - delta_t)
       {
@@ -954,9 +965,13 @@ void dlo::OdomNode::imuOptPreint()
           lastImuT_opt = imuTime;
           imuQueOpt.pop_front();
       }
-      else
-          break;
+      else{
+        imuQueOpt.push_front(endImu);
+        break;
+      }
   }
+  // this->mtx_imu.unlock();
+  //  std::cout<<"end while";
   // return true;
 }
 
@@ -1275,6 +1290,7 @@ void dlo::OdomNode::getNextPose() {
   guess_SE3.block<3, 3>(0, 0) = tmpState.qwb.matrix();  //this->rotq.matrix().cast<double>();
   guess_SE3.block<3, 1>(0, 3) = tmpState.Pwb;//this->pose.cast<double>()
   this->T_s2s = guess_SE3.cast<float>();
+  double getSubmap_start_t = ros::Time::now().toSec();
   // Get current global submap
   this->getSubmapKeyframes();
 
@@ -1285,6 +1301,8 @@ void dlo::OdomNode::getNextPose() {
     // Set target cloud's normals as submap normals
     this->gicp.setTargetCovariances( this->submap_normals );
   }
+
+  timePrint.getSubmap_t = ros::Time::now().toSec() - getSubmap_start_t;
 
   pcl::PointCloud<PointType>::Ptr aligned (new pcl::PointCloud<PointType>);
   // Align with current submap with global S2S transformation as initial guess
@@ -1712,9 +1730,6 @@ void dlo::OdomNode::debug() {
     this->publish_keyframe_thread.detach();
   }
 
-  // Average computation time
-  double avg_comp_time = std::accumulate(this->comp_times.begin(), this->comp_times.end(), 0.0) / this->comp_times.size();
-
   // RAM Usage
   double vm_usage = 0.0;
   double resident_set = 0.0;
@@ -1773,9 +1788,9 @@ void dlo::OdomNode::debug() {
   std::cout << "Distance to Origin :: " << sqrt(pow(this->pose[0]-this->origin[0],2) + pow(this->pose[1]-this->origin[1],2) + pow(this->pose[2]-this->origin[2],2)) << " meters" << std::endl;
 
   std::cout << std::endl << std::right << std::setprecision(2) << std::fixed;
-  int vecsize = comp_times.size();
-  std::cout << "Whole computation Time :: " << std::setfill(' ') << std::setw(6) << this->comp_times[vecsize-1]*1000. << " ms    // Avg: " << std::setw(5) << avg_comp_time*1000. << std::endl;
-  std::cout << "integ+gicp Computation Time :: " << std::setfill(' ') << std::setw(6) << this->comp_times[vecsize-2]*1000. << " ms    // integ: " << std::setw(5) << this->comp_times[vecsize-3]*1000. << std::endl;
+  std::cout << "Whole computation Time :: " << std::setfill(' ') << std::setw(6) << this->timePrint.whole_t*1000. << " ms    // getSubmap time: " << std::setw(5) << timePrint.getSubmap_t*1000 << std::endl;
+  std::cout << "deskew Time :: " << std::setfill(' ') << std::setw(6) << this->timePrint.deskew_t*1000. << " ms    // updateKeyframe time: " << std::setw(5) << this->timePrint.updateKeyframe_t*1000. << std::endl;
+  std::cout << "gicp Computation Time :: " << std::setfill(' ') << std::setw(6) << this->timePrint.gicp_t*1000. << " ms    // integ time: " << std::setw(5) << this->timePrint.integ_t*1000. << std::endl;
   std::cout<< "deskew ?: " << this->deskew_ <<", total size: "<<this->totalPointNums<<"deskew size: "<<this->deskewNums<<"percentage"<<(double)this->deskewNums/this->totalPointNums<< std::endl;
   std::cout<<"preintegration dt: "<<std::setfill(' ') << std::setw(6) << this->integDt << std::endl;
   std::cout << "Cores Utilized   :: " << std::setfill(' ') << std::setw(6) << (cpu_percent/100.) * this->numProcessors << " cores // Avg: " << std::setw(5) << (avg_cpu_usage/100.) * this->numProcessors << std::endl;
